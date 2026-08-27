@@ -70,8 +70,15 @@ def transform_candles(data, symbol):
         return df
 
     # Convert date to datetime
-    df["date"] = pd.to_datetime(df["date"])
+    # Convert date to datetime
+    df["date"] = pd.to_datetime(
+        df["date"],
+        format="%Y-%m-%d",
+        errors="coerce"
+    )
 
+    # Remove invalid dates
+    df = df.dropna(subset=["date"])
     # Sort by date
     df = df.sort_values("date")
 
