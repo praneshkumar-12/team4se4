@@ -14,6 +14,63 @@ BASE_URL = "https://y4t9nq2bqf.execute-api.eu-west-2.amazonaws.com/v1"
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
+def check_health():
+    """Check whether Fauxnance API is alive."""
+
+    url = f"{BASE_URL}/health"
+
+    try:
+        response = requests.get(url, timeout=10)
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        if data.get("data", {}).get("status") != "ok":
+            raise RuntimeError(
+                f"Fauxnance unhealthy: {data}"
+            )
+
+        log.info("Fauxnance health: %s", data)
+
+        return data
+
+        
+
+    except requests.RequestException as error:
+        raise RuntimeError(
+            f"Fauxnance API health check failed: {error}"
+        )
+        
+def check_usage(api_key):
+    """Check API quota usage."""
+
+    url = f"{BASE_URL}/usage"
+
+    headers = {
+        "X-API-Key": api_key
+    }
+
+    try:
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=10
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        log.info("API usage: %s", data)
+
+        return data
+
+    except requests.RequestException as error:
+        raise RuntimeError(
+            f"Could not check API usage: {error}"
+        )  
+
 
 def extract_candles(symbol, start=None, end=None, cache_dir=".cache"):
     """Get raw candle data from Fauxnance or from the local cache."""
@@ -38,6 +95,13 @@ def extract_candles(symbol, start=None, end=None, cache_dir=".cache"):
         with open(cache_file) as f:
             return json.load(f)
 
+    # Check API availability first
+    check_health()
+
+    # Check quota before downloading
+    usage = check_usage(api_key)
+    log.info("Current usage: %s", usage)
+    
     # API request
     url = f"{BASE_URL}/candles/{symbol}"
     headers = {"X-API-Key": api_key}
@@ -55,15 +119,17 @@ def extract_candles(symbol, start=None, end=None, cache_dir=".cache"):
 
             # Quota exhausted
             if response.status_code == 429:
+                usage = check_usage(api_key)
+
                 raise RuntimeError(
                     "Fauxnance API quota exhausted. Stopping."
                 )
 
             # Bad request, bad key, or unknown symbol
             if response.status_code in (400, 401, 404):
-                raise RuntimeError(
-                    f"Fauxnance request failed: HTTP {response.status_code}"
-                )
+                 raise RuntimeError(
+                    f"Quota exhausted. Current usage: {usage}"
+                 )
 
             response.raise_for_status()
 
