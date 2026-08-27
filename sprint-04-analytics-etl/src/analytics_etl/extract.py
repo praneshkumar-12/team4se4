@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 
-def extract_candles(symbol, start=None, end=None, cache_dir=".cache"):
+def extract_candles(symbol, cache_dir=".cache"):
     """Get raw candle data from Fauxnance or from the local cache."""
 
     # Load the API key from .env
@@ -29,7 +29,7 @@ def extract_candles(symbol, start=None, end=None, cache_dir=".cache"):
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(exist_ok=True)
 
-    cache_file = cache_dir / f"{symbol}_{start}_{end}.json"
+    cache_file = cache_dir / f"{symbol}_all.json"
 
     # Use cached data if it already exists
     if cache_file.exists():
@@ -41,15 +41,12 @@ def extract_candles(symbol, start=None, end=None, cache_dir=".cache"):
     # API request
     url = f"{BASE_URL}/candles/{symbol}"
     headers = {"X-API-Key": api_key}
-    params = {"start": start, "end": end}
-
     # Try the request up to 3 times for network problems
     for attempt in range(3):
         try:
             response = requests.get(
                 url,
                 headers=headers,
-                params=params,
                 timeout=10,
             )
 

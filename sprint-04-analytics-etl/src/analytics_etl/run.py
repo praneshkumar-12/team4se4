@@ -14,15 +14,12 @@ from  analytics_etl.transform import transform_candles
 log = logging.getLogger(__name__)
 
 DEFAULT_SYMBOLS = [
-    "INFY.NS",
-    "AAPL"
+    "INFY.NS", "RELIANCE.NS", "AAPL"
 ]
 
 
 def run(
     symbols: list[str],
-    start: str,
-    end: str,
     cache_dir: str | Path = ".cache",
     db_path: str | Path = "artefacts/analytics.duckdb",
 ):
@@ -36,8 +33,6 @@ def run(
             # Extract
             raw = extract_candles(
                 symbol,
-                start,
-                end,
                 cache_dir=cache_dir
             )
 
@@ -91,16 +86,6 @@ def main():
     )
 
     parser.add_argument(
-        "--start",
-        required=True
-    )
-
-    parser.add_argument(
-        "--end",
-        required=True
-    )
-
-    parser.add_argument(
         "--symbols",
         nargs="+",
         default=DEFAULT_SYMBOLS
@@ -111,9 +96,7 @@ def main():
 
 
     run(
-        args.symbols,
-        args.start,
-        args.end
+        args.symbols
     )
 
 
