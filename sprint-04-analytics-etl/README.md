@@ -16,13 +16,21 @@ and tests remain usable.
 
 ## Setup
 
-From the repository root:
+execute in cmd
+
+Navigate to  sprint-04-analytics-etl 
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -e 'sprint-04-analytics-etl[dev]'
+python -m venv .venv
+.venv\Scripts\activate.bat
+pip install -e .
 cp sprint-04-analytics-etl/.env.example sprint-04-analytics-etl/.env
 # Put the real key in .env
+```
+
+#Backup if installation not worked 
+```bash 
+.venv/bin/python -m pip install -e 'sprint-04-analytics-etl[dev]'
 ```
 
 Run tests:
