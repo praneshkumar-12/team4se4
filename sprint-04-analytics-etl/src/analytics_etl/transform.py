@@ -4,73 +4,92 @@ import pandas as pd
 
 
 def transform_candles(data, symbol):
-    """Clean candle data and return a pandas DataFrame."""
+    """Clean and transform candle data using vectorized Pandas operations."""
 
-    # Get candles from the API response
+    # ============================================================
+    # LOAD API DATA
+    # ============================================================
+
     candles = data["data"]["candles"]
 
-    clean = []
+    # Create DataFrame directly from API response
+    df = pd.DataFrame(candles)
 
-    for candle in candles:
-
-        # Required fields
-        required = [
-            "date",
-            "open",
-            "high",
-            "low",
-            "close",
-            "volume",
-        ]
-
-        # Skip candle if a field is missing
-        if not all(field in candle for field in required):
-            continue
-
-        # Convert values to numbers
-        try:
-            open_price = float(candle["open"])
-            high = float(candle["high"])
-            low = float(candle["low"])
-            close = float(candle["close"])
-            volume = float(candle["volume"])
-        except (ValueError, TypeError):
-            continue
-
-        # Reject impossible prices
-        if high < low:
-            continue
-
-        if not low <= open_price <= high:
-            continue
-
-        if not low <= close <= high:
-            continue
-
-        # Reject negative volume
-        if volume < 0:
-            continue
-
-        # Add valid candle
-        clean.append({
-            "symbol": symbol,
-            "date": candle["date"],
-            "open": open_price,
-            "high": high,
-            "low": low,
-            "close": close,
-            "volume": volume,
-        })
-
-    # Convert clean data to DataFrame
-    df = pd.DataFrame(clean)
-
-    # Return empty DataFrame if there are no valid candles
     if df.empty:
         return df
 
-    # Convert date to datetime
-    # Convert date to datetime
+
+    # ============================================================
+    # REQUIRED COLUMNS
+    # ============================================================
+
+    required = [
+        "date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+    ]
+
+    # Keep only rows containing all required fields
+    df = df.dropna(subset=required)
+
+
+    # ============================================================
+    # REMOVE DUPLICATES
+    # ============================================================
+
+    # Remove completely duplicated records
+    df = df.drop_duplicates()
+
+
+    # ============================================================
+    # CONVERT NUMERIC COLUMNS
+    # ============================================================
+
+    numeric_columns = [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+    ]
+
+    df[numeric_columns] = df[numeric_columns].apply(
+        pd.to_numeric,
+        errors="coerce"
+    )
+
+    # Remove rows where numeric conversion failed
+    df = df.dropna(subset=numeric_columns)
+
+
+    # ============================================================
+    # VALIDATE PRICE DATA
+    # ============================================================
+
+    valid_prices = (
+        (df["high"] >= df["low"]) &
+        (df["open"].between(df["low"], df["high"])) &
+        (df["close"].between(df["low"], df["high"])) &
+        (df["volume"] >= 0)
+    )
+
+    df = df[valid_prices].copy()
+
+
+    # ============================================================
+    # ADD SYMBOL
+    # ============================================================
+
+    df["symbol"] = symbol
+
+
+    # ============================================================
+    # CONVERT DATE
+    # ============================================================
+
     df["date"] = pd.to_datetime(
         df["date"],
         format="%Y-%m-%d",
@@ -79,26 +98,73 @@ def transform_candles(data, symbol):
 
     # Remove invalid dates
     df = df.dropna(subset=["date"])
-    # Sort by date
+
+
+    # ============================================================
+    # REMOVE DUPLICATE DATES
+    # ============================================================
+
+    # Keep only one candle for each trading date
+    df = df.drop_duplicates(
+        subset=["symbol", "date"],
+        keep="first"
+    )
+
+
+    # ============================================================
+    # SORT BY DATE
+    # ============================================================
+
     df = df.sort_values("date")
 
-    # Calculate daily return
+
+    # ============================================================
+    # DAILY RETURN
+    # ============================================================
+
     df["daily_return"] = df["close"].pct_change()
 
-    # Calculate daily price range as a percentage
+
+    # ============================================================
+    # DAILY PRICE RANGE %
+    # ============================================================
+
     df["range_pct"] = (
         (df["high"] - df["low"])
         / df["close"]
         * 100
     )
 
-    # Calculate turnover
-    df["turnover"] = df["close"] * df["volume"]
 
-    # Get the week
-    df["week"] = df["date"].dt.to_period("W").dt.start_time
+    # ============================================================
+    # TURNOVER
+    # ============================================================
 
-    # Reset row numbers
+    df["turnover"] = (
+        df["close"] * df["volume"]
+    )
+
+
+    # ============================================================
+    # WEEK
+    # ============================================================
+
+    df["week"] = (
+        df["date"]
+        .dt.to_period("W")
+        .dt.start_time
+    )
+
+
+    # ============================================================
+    # RESET INDEX
+    # ============================================================
+
     df = df.reset_index(drop=True)
+
+
+    # ============================================================
+    # RETURN CLEAN DATA
+    # ============================================================
 
     return df
