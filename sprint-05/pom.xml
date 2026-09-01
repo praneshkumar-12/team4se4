@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>org.leap</groupId>
+    <artifactId>sprint-05-domain</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <properties>
+        <!-- Java -->
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- Dependency versions -->
+        <jakarta.validation.version>3.1.1</jakarta.validation.version>
+        <junit.version>5.13.4</junit.version>
+
+        <!-- Plugin versions -->
+        <maven.surefire.version>3.5.4</maven.surefire.version>
+        <maven.enforcer.version>3.6.2</maven.enforcer.version>
+    </properties>
+
+    <dependencies>
+
+        <!--
+            ONLY production dependency.
+            Bean Validation annotations are allowed in the domain.
+        -->
+        <dependency>
+            <groupId>jakarta.validation</groupId>
+            <artifactId>jakarta.validation-api</artifactId>
+            <version>${jakarta.validation.version}</version>
+        </dependency>
+
+        <!--
+            Test dependency only.
+            JUnit is NOT part of production dependencies.
+        -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+
+            <!--
+                Runs JUnit 5 tests.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${maven.surefire.version}</version>
+            </plugin>
+
+            <!--
+                Prevents forbidden dependencies.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>${maven.enforcer.version}</version>
+
+                <executions>
+                    <execution>
+                        <id>ban-forbidden-dependencies</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+
+                        <configuration>
+                            <rules>
+
+                                <bannedDependencies>
+                                    <searchTransitive>true</searchTransitive>
+
+                                    <excludes>
+
+                                        <!-- Spring -->
+                                        <exclude>org.springframework:*</exclude>
+                                        <exclude>org.springframework.*:*</exclude>
+
+                                        <!-- Servlet API -->
+                                        <exclude>jakarta.servlet:*</exclude>
+                                        <exclude>javax.servlet:*</exclude>
+
+                                        <!-- JDBC drivers -->
+                                        <exclude>org.postgresql:*</exclude>
+                                        <exclude>com.mysql:*</exclude>
+                                        <exclude>com.microsoft.sqlserver:*</exclude>
+                                        <exclude>com.oracle.database.jdbc:*</exclude>
+                                        <exclude>org.mariadb.jdbc:*</exclude>
+
+                                        <!-- MyBatis -->
+                                        <exclude>org.mybatis:*</exclude>
+
+                                        <!-- HikariCP -->
+                                        <exclude>com.zaxxer:HikariCP</exclude>
+
+                                    </excludes>
+
+                                    <message>
+                                        Forbidden dependency detected.
+                                        The sprint-05-domain module must not depend on
+                                        Spring, Servlet API, JDBC drivers, MyBatis,
+                                        or HikariCP, including transitively.
+                                    </message>
+
+                                </bannedDependencies>
+
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+
+            </plugin>
+
+        </plugins>
+    </build>
+
+</project>
