@@ -1,0 +1,65 @@
+classDiagram
+
+    class OrderPlacementService {
+        +placeOrder(PlaceOrderRequest request) Order
+    }
+
+    class PlaceOrderRequest {
+        -Long accountId
+        -String symbol
+        -OrderSide side
+        -BigDecimal quantity
+        -BigDecimal price
+        -String idempotencyKey
+    }
+
+    class OrderValidator {
+        +validateAccount(Account account) void
+        +validateInstrument(Instrument instrument) void
+        +validateQuantity(BigDecimal quantity) void
+        +validatePrice(BigDecimal price) void
+        +validateFunds(Account account, Order order) void
+        +validateHoldings(Position position, Order order) void
+    }
+
+    class OrderExecutor {
+        +execute(Order order) void
+    }
+
+    class AccountProvider {
+        <<interface>>
+        +findById(Long accountId) Account
+    }
+
+    class InstrumentProvider {
+        <<interface>>
+        +findBySymbol(String symbol) Instrument
+    }
+
+    class PositionProvider {
+        <<interface>>
+        +find(Account account, Instrument instrument) Position
+    }
+
+    class IdempotencyChecker {
+        <<interface>>
+        +reserve(String key) boolean
+    }
+
+    OrderPlacementService ..> PlaceOrderRequest : receives
+    OrderPlacementService ..> AccountProvider : loads
+    OrderPlacementService ..> InstrumentProvider : loads
+    OrderPlacementService ..> PositionProvider : loads
+    OrderPlacementService ..> OrderValidator : validates
+    OrderPlacementService ..> IdempotencyChecker : checks
+    OrderPlacementService ..> Order : creates
+    OrderPlacementService ..> OrderExecutor : executes
+
+    OrderValidator ..> Account : validates
+    OrderValidator ..> Instrument : validates
+    OrderValidator ..> Position : validates
+    OrderValidator ..> Order : validates
+
+    OrderExecutor ..> Order : updates
+    OrderExecutor ..> Account : updates cash
+    OrderExecutor ..> Position : updates holdings

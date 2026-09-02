@@ -1,0 +1,168 @@
+classDiagram
+
+    %% =========================
+    %% CLIENT
+    %% =========================
+
+    class Client {
+        -Long clientId
+        -String firstName
+        -String lastName
+        -String email
+        -String phone
+        -LocalDate dob
+        -String riskProfile
+    }
+
+    %% =========================
+    %% ACCOUNT
+    %% =========================
+
+    class Account {
+        -Long accountId
+        -String accountReference
+        -Long clientId
+        -String currency
+        -AccountStatus status
+        -BigDecimal cashBalance
+        -Long version
+
+        +isActive() boolean
+        +canAfford(BigDecimal amount) boolean
+        +debit(BigDecimal amount) void
+        +credit(BigDecimal amount) void
+        +suspend() void
+        +activate() void
+        +close() void
+    }
+
+    %% =========================
+    %% INSTRUMENT
+    %% =========================
+
+    class Instrument {
+        -Long instrumentId
+        -String isin
+        -String ticker
+        -String name
+        -String type
+        -String exchange
+        -boolean active
+        -String currency
+
+        +isTradable() boolean
+        +delist() void
+    }
+
+    %% =========================
+    %% ORDER
+    %% =========================
+
+    class Order {
+        -Long orderId
+        -String idempotencyKey
+        -Long accountId
+        -Long instrumentId
+        -BigDecimal quantity
+        -BigDecimal limitPrice
+        -OrderStatus status
+        -OrderSide side
+        -String orderType
+        -BigDecimal executedPrice
+
+        +fill(BigDecimal executedPrice) void
+        +reject() void
+        +cancel() void
+        +isTerminal() boolean
+    }
+
+    %% =========================
+    %% TRADE
+    %% =========================
+
+    class Trade {
+        -Long tradeId
+        -Long orderId
+        -BigDecimal executedPrice
+        -BigDecimal executedQuantity
+        -Instant executedAt
+        -BigDecimal fee
+    }
+
+    %% =========================
+    %% TRANSACTION HISTORY
+    %% =========================
+
+    class TransactionHistory {
+        -Long txnId
+        -Long accountId
+        -BigDecimal amount
+        -String txnType
+        -String currency
+    }
+
+    %% =========================
+    %% POSITION
+    %% Maps to CLIENT_HOLDINGS
+    %% =========================
+
+    class Position {
+        -Long holdingId
+        -Long accountId
+        -Long instrumentId
+        -BigDecimal quantity
+        -BigDecimal averageCost
+
+        +hasEnough(BigDecimal quantity) boolean
+        +buy(BigDecimal quantity, BigDecimal price) void
+        +sell(BigDecimal quantity) void
+    }
+
+    %% =========================
+    %% ENUMERATIONS
+    %% =========================
+
+    class AccountStatus {
+        <<enumeration>>
+        ACTIVE
+        SUSPENDED
+        CLOSED
+    }
+
+    class OrderSide {
+        <<enumeration>>
+        BUY
+        SELL
+    }
+
+    class OrderStatus {
+        <<enumeration>>
+        NEW
+        FILLED
+        REJECTED
+        CANCELLED
+    }
+
+    %% =========================
+    %% RELATIONSHIPS
+    %% =========================
+
+    Client "1" --> "1" Account : has
+
+    Account "1" --> "0..*" Order : creates
+
+    Account "1" --> "0..*" TransactionHistory : has
+
+    Account "1" --> "0..*" Position : holds
+
+    Instrument "1" --> "0..*" Order : referenced by
+
+    Instrument "1" --> "0..*" Position : held as
+
+    Order "1" --> "0..1" Trade : executes
+
+    Account --> AccountStatus : status
+
+    Order --> OrderSide : side
+
+    Order --> OrderStatus : status
