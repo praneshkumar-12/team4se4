@@ -1,0 +1,52 @@
+classDiagram
+
+%% =========================
+    %% EXCEPTIONS
+    %% =========================
+
+    class DomainException {
+        <<abstract>>
+        -String code
+        -String message
+    }
+
+    class AccountNotFoundException {
+        <<exception>>
+    }
+
+    class AccountNotActiveException {
+        <<exception>>
+    }
+
+    class InstrumentNotFoundException {
+        <<exception>>
+    }
+
+    class InsufficientFundsException {
+        <<exception>>
+    }
+
+    class InsufficientHoldingsException {
+        <<exception>>
+    }
+
+    class DuplicateOrderException {
+        <<exception>>
+    }
+
+    class ValidationException {
+        <<exception>>
+    }
+
+
+    %% =========================
+    %% EXCEPTION HIERARCHY
+    %% =========================
+
+    DomainException <|-- AccountNotFoundException
+    DomainException <|-- AccountNotActiveException
+    DomainException <|-- InstrumentNotFoundException
+    DomainException <|-- InsufficientFundsException
+    DomainException <|-- InsufficientHoldingsException
+    DomainException <|-- DuplicateOrderException
+    DomainException <|-- ValidationException

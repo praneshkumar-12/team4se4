@@ -1,0 +1,115 @@
+classDiagram
+
+    %% =========================
+    %% ENTITIES
+    %% =========================
+
+    class Account {
+        -Long accountId
+        -String accountReference
+        -String holderName
+        -String currency
+        -BigDecimal cashBalance
+        -AccountStatus status
+        -Long version
+
+        +isActive() boolean
+        +canAfford(BigDecimal amount) boolean
+        +debit(BigDecimal amount) void
+        +credit(BigDecimal amount) void
+        +suspend() void
+        +activate() void
+        +close() void
+    }
+
+    class Instrument {
+        -Long instrumentId
+        -String isin
+        -String ticker
+        -String name
+        -String type
+        -String exchange
+        -String currency
+        -boolean tradable
+
+        +isTradable() boolean
+        +delist() void
+    }
+
+    class Position {
+        -Long holdingId
+        -Account account
+        -Instrument instrument
+        -BigDecimal quantity
+        -BigDecimal averageCost
+
+        +hasEnough(BigDecimal quantity) boolean
+        +buy(BigDecimal quantity, BigDecimal price) void
+        +sell(BigDecimal quantity) void
+    }
+
+    class Order {
+        -Long orderId
+        -String idempotencyKey
+        -Account account
+        -Instrument instrument
+        -OrderSide side
+        -BigDecimal quantity
+        -BigDecimal limitPrice
+        -BigDecimal executedPrice
+        -OrderStatus status
+        -String orderType
+
+        +fill(BigDecimal executedPrice) void
+        +reject() void
+        +cancel() void
+        +isTerminal() boolean
+    }
+
+
+    %% =========================
+    %% ENUMS
+    %% =========================
+
+    class AccountStatus {
+        <<enumeration>>
+        ACTIVE
+        SUSPENDED
+        CLOSED
+    }
+
+    class OrderSide {
+        <<enumeration>>
+        BUY
+        SELL
+    }
+
+    class OrderStatus {
+        <<enumeration>>
+        NEW
+        FILLED
+        REJECTED
+        CANCELLED
+    }
+
+
+    %% =========================
+    %% RELATIONSHIPS
+    %% =========================
+
+    Account --> AccountStatus : status
+
+    Order --> OrderSide : side
+    Order --> OrderStatus : status
+
+    Account "1" --> "0..*" Order : places
+
+    Account "1" --> "0..*" Position : owns
+
+    Instrument "1" --> "0..*" Order : traded in
+
+    Instrument "1" --> "0..*" Position : held as
+
+    Order "1" --> "1" Account : belongs to
+
+    Order "1" --> "1" Instrument : references

@@ -1,0 +1,94 @@
+sequenceDiagram
+    actor Client
+    participant Service as OrderPlacementService
+    participant AP as AccountProvider
+    participant IP as InstrumentProvider
+    participant PP as PositionProvider
+    participant V as OrderValidator
+    participant ID as IdempotencyChecker
+    participant O as Order
+    participant E as OrderExecutor
+    participant A as Account
+    participant P as Position
+
+    Client->>Service: placeOrder(request)
+    activate Service
+
+    Service->>AP: findById(accountId)
+    activate AP
+    AP-->>Service: Account
+    deactivate AP
+
+    Service->>IP: findBySymbol(symbol)
+    activate IP
+    IP-->>Service: Instrument
+    deactivate IP
+
+    Service->>PP: find(account, instrument)
+    activate PP
+    PP-->>Service: Position
+    deactivate PP
+
+    Service->>V: validateAccount(account)
+    activate V
+    V-->>Service: valid
+    deactivate V
+
+    Service->>V: validateInstrument(instrument)
+    activate V
+    V-->>Service: valid
+    deactivate V
+
+    Service->>V: validateQuantity(quantity)
+    activate V
+    V-->>Service: valid
+    deactivate V
+
+    Service->>V: validatePrice(price)
+    activate V
+    V-->>Service: valid
+    deactivate V
+
+    Service->>V: validateFunds(account, order)
+    activate V
+    V-->>Service: valid
+    deactivate V
+
+    Service->>V: validateHoldings(position, order)
+    activate V
+    V-->>Service: valid
+    deactivate V
+
+    Service->>ID: reserve(idempotencyKey)
+    activate ID
+    ID-->>Service: reserved
+    deactivate ID
+
+    Service->>O: create(account, instrument, request)
+    activate O
+    O-->>Service: Order NEW
+    deactivate O
+
+    Service->>E: execute(order)
+    activate E
+
+    E->>A: debit/credit(totalValue)
+    activate A
+    A-->>E: cash updated
+    deactivate A
+
+    E->>P: buy/sell(quantity, price)
+    activate P
+    P-->>E: position updated
+    deactivate P
+
+    E->>O: fill(executedPrice)
+    activate O
+    O-->>E: status FILLED
+    deactivate O
+
+    E-->>Service: execution successful
+    deactivate E
+
+    Service-->>Client: Order FILLED
+    deactivate Service
