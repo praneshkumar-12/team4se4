@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.Objects;
 
 import org.leap.domain.enums.AccountStatus;
+import org.leap.exceptions.InsufficientFundsException;
 
 public class Account {
 
@@ -111,7 +112,7 @@ public class Account {
 
         if (!canAfford(amount)) {
             throw new InsufficientFundsException(
-                    "Insufficient funds for debit");
+                    accountId,amount,cashBalance);
         }
 
         cashBalance = cashBalance.subtract(amount);

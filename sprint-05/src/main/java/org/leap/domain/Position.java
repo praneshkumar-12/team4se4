@@ -1,5 +1,7 @@
 package org.leap.domain;
 
+import org.leap.exceptions.InsufficientHoldingsException;
+
 import java.math.BigDecimal;
 import java.util.Objects;
 
@@ -95,9 +97,9 @@ public class Position {
 
         if (sellQuantity.compareTo(quantity) > 0) {
             throw new InsufficientHoldingsException(
-                    "Insufficient holdings");
+                    accountId,instrumentId,sellQuantity,quantity);
         }
-
+        
         quantity = quantity.subtract(sellQuantity);
 
         if (quantity.compareTo(BigDecimal.ZERO) == 0) {
