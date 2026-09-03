@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 BASE_URL = "https://y4t9nq2bqf.execute-api.eu-west-2.amazonaws.com/v1"
 
 MAX_RETRIES = 3
-REQUEST_TIMEOUT = 10
+REQUEST_TIMEOUT = 10   #retry after 
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
