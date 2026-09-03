@@ -1,0 +1,179 @@
+sequenceDiagram
+    autonumber
+
+    actor Client
+
+    participant Service as OrderPlacementService
+    participant Validator as OrderValidator
+    participant AccountPort as AccountProvider
+    participant InstrumentPort as InstrumentProvider
+    participant PositionPort as PositionProvider
+    participant Idempotency as IdempotencyChecker
+    participant Account as Account
+    participant Instrument as Instrument
+    participant Position as Position
+    participant Order as Order
+    participant Executor as OrderExecutor
+
+    Client->>Service: placeOrder(PlaceOrderRequest)
+
+    activate Service
+
+    Service->>Validator: validate(request)
+
+    activate Validator
+
+
+    %% Rule 1
+    Validator->>AccountPort: findById(accountId)
+
+    activate AccountPort
+    AccountPort-->>Validator: Account
+    deactivate AccountPort
+
+    alt Account not found
+        Validator-->>Service: throw AccountNotFoundException(ACC-404)
+        Service-->>Client: Order rejected
+    else Account exists
+
+        %% Rule 2
+        Validator->>Account: isActive()
+
+        activate Account
+        Account-->>Validator: true
+        deactivate Account
+
+        alt Account suspended or closed
+            Validator-->>Service: throw AccountNotActiveException(ACC-403)
+            Service-->>Client: Order rejected
+
+        else Account active
+
+            %% Rule 3
+            Validator->>InstrumentPort: findBySymbol(symbol)
+
+            activate InstrumentPort
+            InstrumentPort-->>Validator: Instrument
+            deactivate InstrumentPort
+
+
+            alt Instrument unavailable
+                Validator-->>Service: throw InstrumentNotFoundException(INS-404)
+                Service-->>Client: Order rejected
+
+            else Instrument tradable
+
+                %% Rules 4 and 5
+                Validator->>Validator: validateQuantity()
+                Validator->>Validator: validatePrice()
+
+
+                alt Invalid quantity or price
+                    Validator-->>Service: throw DomainValidationException(VAL-422)
+                    Service-->>Client: Order rejected
+
+                else Valid quantity and price
+
+
+                    %% Rule 6
+                    Validator->>Account: canAfford(quantity × price)
+
+                    activate Account
+                    Account-->>Validator: true
+                    deactivate Account
+
+
+                    alt Insufficient funds
+                        Validator-->>Service: throw InsufficientFundsException(ORD-400)
+                        Service-->>Client: Order rejected
+
+                    else Enough funds
+
+
+                        %% Rule 7
+                        Validator->>PositionPort: find(account,instrument)
+
+                        activate PositionPort
+                        PositionPort-->>Validator: Position
+                        deactivate PositionPort
+
+
+                        Validator->>Position: hasEnough(quantity)
+
+                        activate Position
+                        Position-->>Validator: true
+                        deactivate Position
+
+
+                        alt Insufficient holdings
+                            Validator-->>Service: throw InsufficientHoldingsException(ORD-409)
+                            Service-->>Client: Order rejected
+
+                        else Holdings available
+
+
+                            %% Rule 8
+                            Validator->>Idempotency: reserve(key)
+
+                            activate Idempotency
+                            Idempotency-->>Validator: true
+                            deactivate Idempotency
+
+
+                            alt Duplicate order
+                                Validator-->>Service: throw DuplicateOrderException(ORD-409)
+                                Service-->>Client: Order rejected
+
+                            else New order
+
+
+                                Validator-->>Service: Validation successful
+                                deactivate Validator
+
+
+                                Service->>Order: create Order(status NEW)
+
+                                activate Order
+                                Order-->>Service: Order created
+                                deactivate Order
+
+
+                                Service->>Executor: execute(Order)
+
+                                activate Executor
+
+                                Executor->>Account: debit(amount)
+
+                                activate Account
+                                Account-->>Executor: balance updated
+                                deactivate Account
+
+
+                                Executor->>Position: buy/sell(quantity)
+
+                                activate Position
+                                Position-->>Executor: position updated
+                                deactivate Position
+
+
+                                Executor->>Order: fill(executedPrice)
+
+                                activate Order
+                                Order-->>Executor: status FILLED
+                                deactivate Order
+
+
+                                Executor-->>Service: Trade completed
+                                deactivate Executor
+
+
+                                Service-->>Client: Order accepted
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    deactivate Service
