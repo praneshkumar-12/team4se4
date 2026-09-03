@@ -1,83 +1,85 @@
 sequenceDiagram
+    autonumber
+
     actor Client
     participant S as OrderPlacementService
+    participant ID as IdempotencyChecker
+    participant O as Order
+    participant V as OrderValidator
     participant AP as AccountProvider
     participant IP as InstrumentProvider
     participant PP as PositionProvider
-    participant V as OrderValidator
-    participant ID as IdempotencyChecker
-    participant O as Order
-    participant E as OrderExecutor
     participant A as Account
+    participant I as Instrument
     participant P as Position
+    participant E as OrderExecutor
 
     Client->>S: placeOrder(request)
     activate S
 
-    S->>AP: findById(accountId)
-    activate AP
-    AP-->>S: Account
-    deactivate AP
-
-    S->>IP: findBySymbol(symbol)
-    activate IP
-    IP-->>S: Instrument
-    deactivate IP
-
-    S->>PP: find(account, instrument)
-    activate PP
-    PP-->>S: Position
-    deactivate PP
-
-    S->>V: validateAccount(account)
-    activate V
-    V-->>S: valid
-    deactivate V
-
-    S->>V: validateInstrument(instrument)
-    activate V
-    V-->>S: valid
-    deactivate V
-
-    S->>V: validateQuantity(quantity)
-    activate V
-    V-->>S: valid
-    deactivate V
-
-    S->>V: validatePrice(price)
-    activate V
-    V-->>S: valid
-    deactivate V
-
-    S->>V: validateFunds(account, order)
-    activate V
-    V-->>S: valid
-    deactivate V
-
-    S->>V: validateHoldings(position, order)
-    activate V
-    V-->>S: valid
-    deactivate V
-
     S->>ID: reserve(idempotencyKey)
     activate ID
-    ID-->>S: reserved
+    ID-->>S: true
     deactivate ID
 
-    S->>O: create(account, instrument, request)
+    S->>O: create(request)
     activate O
     O-->>S: Order NEW
     deactivate O
 
+    S->>V: validate(order)
+    activate V
+
+    V->>AP: findById(accountId)
+    activate AP
+    AP-->>V: Account
+    deactivate AP
+
+    V->>A: isActive()
+    activate A
+    A-->>V: true
+    deactivate A
+
+    V->>IP: findBySymbol(symbol)
+    activate IP
+    IP-->>V: Instrument
+    deactivate IP
+
+    V->>I: isTradable()
+    activate I
+    I-->>V: true
+    deactivate I
+
+    V->>V: validateQuantity(quantity)
+    V->>V: validatePrice(price)
+
+    V->>A: canAfford(quantity × price)
+    activate A
+    A-->>V: true
+    deactivate A
+
+    V->>PP: find(account, instrument)
+    activate PP
+    PP-->>V: Position
+    deactivate PP
+
+    V->>P: hasEnough(quantity)
+    activate P
+    P-->>V: true
+    deactivate P
+
+    V-->>S: validation successful
+    deactivate V
+
     S->>E: execute(order)
     activate E
 
-    E->>A: debit(totalValue)
+    E->>A: debit(amount)
     activate A
-    A-->>E: cash updated
+    A-->>E: balance updated
     deactivate A
 
-    E->>P: buy(quantity, price)
+    E->>P: buy/sell(quantity)
     activate P
     P-->>E: position updated
     deactivate P

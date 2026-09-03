@@ -1,3 +1,4 @@
+
 classDiagram
 
     class OrderPlacementService {
@@ -14,6 +15,10 @@ classDiagram
     }
 
     class OrderValidator {
+        -AccountProvider accountProvider
+        -InstrumentProvider instrumentProvider
+        -PositionProvider positionProvider
+        +validate(Order order) void
         +validateAccount(Account account) void
         +validateInstrument(Instrument instrument) void
         +validateQuantity(BigDecimal quantity) void
@@ -47,13 +52,14 @@ classDiagram
     }
 
     OrderPlacementService ..> PlaceOrderRequest : receives
-    OrderPlacementService ..> AccountProvider : loads
-    OrderPlacementService ..> InstrumentProvider : loads
-    OrderPlacementService ..> PositionProvider : loads
-    OrderPlacementService ..> OrderValidator : validates
     OrderPlacementService ..> IdempotencyChecker : checks
     OrderPlacementService ..> Order : creates
+    OrderPlacementService ..> OrderValidator : validates
     OrderPlacementService ..> OrderExecutor : executes
+
+    OrderValidator --> AccountProvider : uses
+    OrderValidator --> InstrumentProvider : uses
+    OrderValidator --> PositionProvider : uses
 
     OrderValidator ..> Account : validates
     OrderValidator ..> Instrument : validates
@@ -63,3 +69,4 @@ classDiagram
     OrderExecutor ..> Order : updates
     OrderExecutor ..> Account : updates cash
     OrderExecutor ..> Position : updates holdings
+
