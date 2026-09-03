@@ -14,7 +14,7 @@ from  analytics_etl.transform import transform_candles
 log = logging.getLogger(__name__)
 
 DEFAULT_SYMBOLS = [
-    "INFY.NS", "RELIANCE.NS", "AAPL"
+    "INFY.NS", "RELIANCE.NS", "HDFCBANK.NS"
 ]
 
 

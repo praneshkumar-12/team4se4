@@ -1,3 +1,4 @@
+
 from pathlib import Path
 
 import duckdb
@@ -12,7 +13,11 @@ import plotly.express as px
 DB_PATH = "artefacts/analytics.duckdb"
 OUTPUT = "artefacts/report.html"
 
-SYMBOLS = ["INFY.NS", "RELIANCE.NS", "AAPL"]
+SYMBOLS = [
+    "INFY.NS",
+    "RELIANCE.NS",
+    "HDFCBANK.NS"
+]
 
 
 # ============================================================
@@ -20,13 +25,25 @@ SYMBOLS = ["INFY.NS", "RELIANCE.NS", "AAPL"]
 # ============================================================
 
 def load_data(db_path):
-
     con = duckdb.connect(db_path, read_only=True)
 
     df = con.execute("""
-        SELECT *
+        SELECT
+            date,
+            symbol,
+            open,
+            high,
+            low,
+            close,
+            volume,
+            daily_return,
+            range_pct,
+            turnover,
+            normalized_price,
+            week,
+            year
         FROM fact_candles
-        ORDER BY date
+        ORDER BY symbol, date
     """).df()
 
     con.close()
@@ -46,7 +63,7 @@ def create_dashboard():
         raise RuntimeError("No data found in DuckDB")
 
     # --------------------------------------------------------
-    # Basic cleaning
+    # Filter instruments
     # --------------------------------------------------------
 
     df["date"] = pd.to_datetime(df["date"])
@@ -59,55 +76,13 @@ def create_dashboard():
         ["symbol", "date"]
     )
 
-    # --------------------------------------------------------
-    # Daily return
-    # --------------------------------------------------------
-
-    df["daily_return"] = (
-        df.groupby("symbol")["close"]
-        .pct_change()
-        * 100
-    )
-
-    # --------------------------------------------------------
-    # Normalized price
-    # --------------------------------------------------------
-
-    df["normalized_price"] = (
-        df["close"]
-        / df.groupby("symbol")["close"].transform("first")
-        * 100
-    )
-
-    # --------------------------------------------------------
-    # Rolling peak
-    # --------------------------------------------------------
-
-    df["rolling_peak"] = (
-        df.groupby("symbol")["close"]
-        .cummax()
-    )
-
-    # --------------------------------------------------------
-    # Drawdown
-    # --------------------------------------------------------
-
-    df["drawdown"] = (
-        (
-            df["close"] /
-            df["rolling_peak"]
-        ) - 1
-    ) * 100
-
-
-   
 
     # ========================================================
-    # CHART 4
-    # NORMALIZED PRICE
+    # CHART 1
+    # NORMALIZED PRICE PERFORMANCE
     # ========================================================
 
-    fig4 = px.line(
+    fig1 = px.line(
         df,
         x="date",
         y="normalized_price",
@@ -116,24 +91,27 @@ def create_dashboard():
         labels={
             "date": "Date",
             "normalized_price": "Normalized Price (Start = 100)",
-            "symbol": "Instrument"
-        }
+            "symbol": "Instrument",
+        },
     )
 
-    fig4.add_hline(
+    fig1.add_hline(
         y=100,
-        line_dash="dash"
+        line_dash="dash",
     )
 
 
-   
     # ========================================================
-    # CHART 8
+    # CHART 2
     # DAILY RETURN DISTRIBUTION
     # ========================================================
 
-    fig8 = px.histogram(
-        df,
+    return_data = df.dropna(
+        subset=["daily_return"]
+    )
+
+    fig2 = px.histogram(
+        return_data,
         x="daily_return",
         color="symbol",
         nbins=60,
@@ -141,21 +119,15 @@ def create_dashboard():
         title="Distribution of Daily Returns",
         labels={
             "daily_return": "Daily Return (%)",
-            "symbol": "Instrument"
-        }
+            "symbol": "Instrument",
+        },
     )
 
 
-    
-
-
-
     # ========================================================
-    # CHART 11
+    # CHART 3
     # ANNUAL RETURNS
     # ========================================================
-
-    df["year"] = df["date"].dt.year
 
     annual = (
         df.groupby(
@@ -167,12 +139,12 @@ def create_dashboard():
 
     annual["annual_return"] = (
         (
-            annual["last"] /
-            annual["first"]
+            annual["last"]
+            / annual["first"]
         ) - 1
     ) * 100
 
-    fig11 = px.bar(
+    fig3 = px.bar(
         annual,
         x="year",
         y="annual_return",
@@ -182,26 +154,25 @@ def create_dashboard():
         labels={
             "year": "Year",
             "annual_return": "Return (%)",
-            "symbol": "Instrument"
-        }
+            "symbol": "Instrument",
+        },
     )
 
-    fig11.add_hline(
+    fig3.add_hline(
         y=0,
-        line_dash="dash"
+        line_dash="dash",
     )
 
-
-   
 
     # ========================================================
     # BUILD HTML
     # ========================================================
 
     output = Path(OUTPUT)
+
     output.parent.mkdir(
         parents=True,
-        exist_ok=True
+        exist_ok=True,
     )
 
     html = f"""
@@ -239,26 +210,9 @@ def create_dashboard():
                 border-radius: 8px;
             }}
 
-            table {{
-                border-collapse: collapse;
-                width: 100%;
-            }}
-
-            th, td {{
-                padding: 10px;
-                border-bottom: 1px solid #ddd;
-                text-align: right;
-            }}
-
-            th {{
-                text-align: center;
-                background-color: #eee;
-            }}
-
         </style>
 
     </head>
-
 
     <body>
 
@@ -267,6 +221,7 @@ def create_dashboard():
         <div class="subtitle">
             Historical analysis of INFY, RELIANCE and AAPL
         </div>
+
 
         <div class="card">
 
@@ -277,35 +232,46 @@ def create_dashboard():
                 starting value of 100.
             </p>
 
-            {fig4.to_html(
+            {fig1.to_html(
                 full_html=False,
                 include_plotlyjs=True
             )}
 
         </div>
 
+
         <div class="card">
 
             <h2>Annual Returns</h2>
 
-            {fig11.to_html(
+            <p>
+                Shows the annual percentage return for each
+                instrument.
+            </p>
+
+            {fig3.to_html(
                 full_html=False,
                 include_plotlyjs=False
             )}
 
         </div>
+
 
         <div class="card">
 
             <h2>Daily Return Distribution</h2>
 
-            {fig8.to_html(
+            <p>
+                Shows the distribution of daily percentage
+                returns for each instrument.
+            </p>
+
+            {fig2.to_html(
                 full_html=False,
                 include_plotlyjs=False
             )}
 
         </div>
-
 
     </body>
 
@@ -314,12 +280,12 @@ def create_dashboard():
 
 
     # ========================================================
-    # SAVE
+    # SAVE DASHBOARD
     # ========================================================
 
     output.write_text(
         html,
-        encoding="utf-8"
+        encoding="utf-8",
     )
 
     print(
@@ -333,3 +299,4 @@ def create_dashboard():
 
 if __name__ == "__main__":
     create_dashboard()
+
