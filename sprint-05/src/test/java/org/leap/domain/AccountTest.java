@@ -1,6 +1,8 @@
 package org.leap.domain;
 
 import org.junit.jupiter.api.Test;
+import org.leap.domain.enums.*;
+import org.leap.exceptions.*;
 
 import java.math.BigDecimal;
 
@@ -266,16 +268,4 @@ class AccountTest {
         );
     }
 
-    private Account activeAccount() {
-        return new Account(
-                1L,
-                "ACC-001",
-                "Abinaya",
-                "K",
-                "EUR",
-                new BigDecimal("1000.00"),
-                AccountStatus.ACTIVE,
-                0L
-        );
-    }
 }

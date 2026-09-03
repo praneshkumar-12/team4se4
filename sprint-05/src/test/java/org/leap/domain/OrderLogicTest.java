@@ -1,13 +1,17 @@
 package org.leap.domain;
 
+import org.leap.domain.enums.*;
+import org.leap.exceptions.*;
+import org.leap.dto.*;
+
+import org.leap.service.*;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -20,6 +24,7 @@ class OrderLogicTest {
     private Map<String, Order> orders;
     private Map<String, Position> positions;
 
+
     @BeforeEach
     void setUp() {
         accounts = new HashMap<>();
@@ -27,7 +32,7 @@ class OrderLogicTest {
         orders = new HashMap<>();
         positions = new HashMap<>();
 
-        service = new OrderPlacementService(
+        service = new OrderPlacementServiceImpl(
                 accounts,
                 instruments,
                 orders,
@@ -53,7 +58,7 @@ class OrderLogicTest {
     @Test
     void rule1_shouldRejectWhenAccountDoesNotExist() {
 
-        PlaceOrderRequest request = request(
+        OrderRequest request = request(
                 999L,
                 "AAPL",
                 OrderSide.BUY,
@@ -77,7 +82,7 @@ class OrderLogicTest {
     @Test
     void rule1_shouldNotFireWhenAccountExists() {
 
-        PlaceOrderRequest request = validBuy();
+        OrderRequest request = validBuy();
 
         assertDoesNotThrow(
                 () -> service.placeOrder(request)
@@ -145,7 +150,7 @@ class OrderLogicTest {
     @Test
     void rule3_shouldRejectUnknownInstrument() {
 
-        PlaceOrderRequest request = request(
+        OrderRequest request = request(
                 1L,
                 "UNKNOWN",
                 OrderSide.BUY,
@@ -202,7 +207,7 @@ class OrderLogicTest {
     @Test
     void rule4_shouldRejectZeroQuantity() {
 
-        PlaceOrderRequest request = request(
+        OrderRequest request = request(
                 1L,
                 "AAPL",
                 OrderSide.BUY,
@@ -211,9 +216,9 @@ class OrderLogicTest {
                 "IDEMP003"
         );
 
-        DomainValidationException exception =
+        DomainException exception =
                 assertThrows(
-                        DomainValidationException.class,
+                        DomainException.class,
                         () -> service.placeOrder(request)
                 );
 
@@ -226,7 +231,7 @@ class OrderLogicTest {
     @Test
     void rule4_shouldRejectNegativeQuantity() {
 
-        PlaceOrderRequest request = request(
+        OrderRequest request = request(
                 1L,
                 "AAPL",
                 OrderSide.BUY,
@@ -235,9 +240,9 @@ class OrderLogicTest {
                 "IDEMP004"
         );
 
-        DomainValidationException exception =
+        DomainException exception =
                 assertThrows(
-                        DomainValidationException.class,
+                        DomainException.class,
                         () -> service.placeOrder(request)
                 );
 
@@ -263,7 +268,7 @@ class OrderLogicTest {
     @Test
     void rule5_shouldRejectZeroPrice() {
 
-        PlaceOrderRequest request = request(
+        OrderRequest request = request(
                 1L,
                 "AAPL",
                 OrderSide.BUY,
@@ -272,9 +277,9 @@ class OrderLogicTest {
                 "IDEMP005"
         );
 
-        DomainValidationException exception =
+        DomainException exception =
                 assertThrows(
-                        DomainValidationException.class,
+                        DomainException.class,
                         () -> service.placeOrder(request)
                 );
 
@@ -287,7 +292,7 @@ class OrderLogicTest {
     @Test
     void rule5_shouldRejectNegativePrice() {
 
-        PlaceOrderRequest request = request(
+        OrderRequest request = request(
                 1L,
                 "AAPL",
                 OrderSide.BUY,
@@ -296,9 +301,9 @@ class OrderLogicTest {
                 "IDEMP006"
         );
 
-        DomainValidationException exception =
+        DomainException exception =
                 assertThrows(
-                        DomainValidationException.class,
+                        DomainException.class,
                         () -> service.placeOrder(request)
                 );
 
@@ -324,7 +329,7 @@ class OrderLogicTest {
     @Test
     void rule6_shouldRejectBuyWhenInsufficientFunds() {
 
-        PlaceOrderRequest request = request(
+        OrderRequest request = request(
                 1L,
                 "AAPL",
                 OrderSide.BUY,
@@ -348,7 +353,7 @@ class OrderLogicTest {
     @Test
     void rule6_shouldAllowBuyWhenCashExactlyEqualsCost() {
 
-        PlaceOrderRequest request = request(
+        OrderRequest request = request(
                 1L,
                 "AAPL",
                 OrderSide.BUY,
@@ -381,7 +386,7 @@ class OrderLogicTest {
                 )
         );
 
-        PlaceOrderRequest request = request(
+        OrderRequest request = request(
                 1L,
                 "AAPL",
                 OrderSide.SELL,
@@ -416,7 +421,7 @@ class OrderLogicTest {
                 )
         );
 
-        PlaceOrderRequest request = request(
+        OrderRequest request = request(
                 1L,
                 "AAPL",
                 OrderSide.SELL,
@@ -438,11 +443,11 @@ class OrderLogicTest {
     @Test
     void rule8_shouldRejectDuplicateIdempotencyKey() {
 
-        PlaceOrderRequest first = validBuy();
+        OrderRequest first = validBuy();
 
         service.placeOrder(first);
 
-        PlaceOrderRequest duplicate = request(
+        OrderRequest duplicate = request(
                 1L,
                 "AAPL",
                 OrderSide.BUY,
@@ -468,7 +473,7 @@ class OrderLogicTest {
 
         service.placeOrder(validBuy());
 
-        PlaceOrderRequest second = request(
+        OrderRequest second = request(
                 1L,
                 "AAPL",
                 OrderSide.BUY,
@@ -490,7 +495,7 @@ class OrderLogicTest {
     void ruleEvaluationShouldFollowRequiredOrder() {
 
         // Account does not exist AND instrument does not exist.
-        PlaceOrderRequest request = request(
+        OrderRequest request = request(
                 999L,
                 "UNKNOWN",
                 OrderSide.BUY,
@@ -520,7 +525,7 @@ class OrderLogicTest {
                 suspendedAccount()
         );
 
-        PlaceOrderRequest request = request(
+        OrderRequest request = request(
                 1L,
                 "AAPL",
                 OrderSide.BUY,
@@ -550,7 +555,7 @@ class OrderLogicTest {
 
         instruments.put("AAPL", instrument);
 
-        PlaceOrderRequest request = request(
+        OrderRequest request = request(
                 1L,
                 "AAPL",
                 OrderSide.BUY,
@@ -574,7 +579,7 @@ class OrderLogicTest {
     @Test
     void quantityFailureShouldWinBeforePriceFailure() {
 
-        PlaceOrderRequest request = request(
+        OrderRequest request = request(
                 1L,
                 "AAPL",
                 OrderSide.BUY,
@@ -599,7 +604,7 @@ class OrderLogicTest {
     @Test
     void priceFailureShouldWinBeforeInsufficientFunds() {
 
-        PlaceOrderRequest request = request(
+        OrderRequest request = request(
                 1L,
                 "AAPL",
                 OrderSide.BUY,
@@ -624,7 +629,7 @@ class OrderLogicTest {
     // Helpers
     // =========================================================
 
-    private PlaceOrderRequest validBuy() {
+    private OrderRequest validBuy() {
         return request(
                 1L,
                 "AAPL",
@@ -635,7 +640,7 @@ class OrderLogicTest {
         );
     }
 
-    private PlaceOrderRequest request(
+    private OrderRequest request(
             Long accountId,
             String symbol,
             OrderSide side,
@@ -643,11 +648,11 @@ class OrderLogicTest {
             String price,
             String idempotencyKey
     ) {
-        return new PlaceOrderRequest(
+        return new OrderRequest(
                 accountId,
                 symbol,
                 side,
-                new BigDecimal(quantity),
+                Long.valueOf(quantity),       // FIX
                 new BigDecimal(price),
                 idempotencyKey
         );

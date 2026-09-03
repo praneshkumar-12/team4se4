@@ -1,6 +1,7 @@
 package org.leap.domain;
 
 import org.junit.jupiter.api.Test;
+import org.leap.domain.enums.*;
 
 import java.math.BigDecimal;
 
