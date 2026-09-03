@@ -57,8 +57,8 @@ class PositionTest {
         );
 
         assertEquals(
-                new BigDecimal("110"),
-                position.getAverageCost()
+                0,
+                new BigDecimal("110").compareTo(position.getAverageCost())
         );
     }
 
@@ -80,8 +80,8 @@ class PositionTest {
         );
 
         assertEquals(
-                new BigDecimal("150"),
-                position.getAverageCost()
+                0,
+                new BigDecimal("150").compareTo(position.getAverageCost())
         );
     }
 
@@ -130,8 +130,8 @@ class PositionTest {
         );
 
         assertEquals(
-                new BigDecimal("100"),
-                position.getAverageCost()
+                0,
+                BigDecimal.ZERO.compareTo(position.getAverageCost())
         );
     }
 

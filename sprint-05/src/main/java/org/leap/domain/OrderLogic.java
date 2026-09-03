@@ -10,7 +10,7 @@ import org.leap.exceptions.DuplicateOrderException;
 import org.leap.exceptions.InstrumentNotFoundException;
 import org.leap.exceptions.InsufficientFundsException;
 import org.leap.exceptions.InsufficientHoldingsException;
-
+import org.leap.dto.OrderRequest;
 import java.math.BigDecimal;
 import java.util.Map;
 import java.util.Objects;
@@ -44,7 +44,7 @@ public class OrderLogic {
     }
 
     public synchronized Order placeOrder(
-            PlaceOrderRequest request) {
+            OrderRequest request) {
 
         Objects.requireNonNull(request);
 

@@ -43,7 +43,7 @@ public class OrderRequest {
     // test to take a Long here; Min(1) still enforces "whole units, greater than zero".
     @NotNull(message = "quantity is required")
     @Min(value = 1, message = "quantity must be greater than zero")
-    private final Long quantity;
+    private final BigDecimal quantity;
 
     @NotNull(message = "price is required")
     @DecimalMin(value = "0.0", inclusive = false, message = "price must be greater than zero")
@@ -57,7 +57,7 @@ public class OrderRequest {
     public OrderRequest(Long accountId,
                              String symbol,
                              OrderSide side,
-                             Long quantity,
+                             BigDecimal quantity,
                              BigDecimal price,
                              String idempotencyKey) {
         this.accountId = accountId;
@@ -80,7 +80,7 @@ public class OrderRequest {
         return side;
     }
 
-    public Long getQuantity() {
+    public BigDecimal getQuantity() {
         return quantity;
     }
 

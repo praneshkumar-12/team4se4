@@ -4,8 +4,6 @@ import org.leap.domain.enums.*;
 import org.leap.exceptions.*;
 import org.leap.dto.*;
 
-import org.leap.service.*;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class OrderLogicTest {
 
-    private OrderPlacementService service;
+    private OrderLogic service;
 
     private Map<Long, Account> accounts;
     private Map<String, Instrument> instruments;
@@ -32,7 +30,7 @@ class OrderLogicTest {
         orders = new HashMap<>();
         positions = new HashMap<>();
 
-        service = new OrderPlacementServiceImpl(
+        service = new OrderLogic(
                 accounts,
                 instruments,
                 orders,
@@ -447,6 +445,10 @@ class OrderLogicTest {
 
         service.placeOrder(first);
 
+        // Placing the first order spends the account's cash; top it up so the
+        // duplicate is rejected for its idempotency key, not insufficient funds.
+        accounts.get(1L).credit(new BigDecimal("1000.00"));
+
         OrderRequest duplicate = request(
                 1L,
                 "AAPL",
@@ -472,6 +474,10 @@ class OrderLogicTest {
     void rule8_shouldAllowDifferentIdempotencyKey() {
 
         service.placeOrder(validBuy());
+
+        // Placing the first order spends the account's cash; top it up so the
+        // second order is evaluated on its idempotency key, not insufficient funds.
+        accounts.get(1L).credit(new BigDecimal("1000.00"));
 
         OrderRequest second = request(
                 1L,
@@ -652,7 +658,7 @@ class OrderLogicTest {
                 accountId,
                 symbol,
                 side,
-                Long.valueOf(quantity),       // FIX
+                new BigDecimal(quantity),      
                 new BigDecimal(price),
                 idempotencyKey
         );
