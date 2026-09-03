@@ -1,6 +1,6 @@
-# Trading Platform — Database Schema (v3)
+# Trading Platform — ER Diagram
 
-Entity-relationship diagram for the trading platform, generated from the migration files.
+Entity-relationship diagram for the trading platform.
 
 ## ER Diagram
 
