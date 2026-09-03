@@ -149,17 +149,17 @@ classDiagram
 
     Client "1" --> "1" Account : has
 
-    Account "1" --> "0..*" Order : creates
+    Account "1" *-- "1..*" Order : creates
 
-    Account "1" --> "0..*" TransactionHistory : has
+    Account "1" *-- "1..*" TransactionHistory : has
 
-    Account "1" --> "0..*" Position : holds
+    Account "1" *-- "1..*" Position : holds
 
-    Instrument "1" --> "0..*" Order : referenced by
+    Instrument "1" --> "1..*" Order : referenced by
 
-    Instrument "1" --> "0..*" Position : held as
+    Instrument "1" --> "1..*" Position : held as
 
-    Order "1" --> "0..1" Trade : executes
+    Order "1" *-- "1..1" Trade : executes
 
     Account --> AccountStatus : status
 
