@@ -3,7 +3,7 @@ from analytics_etl.extract import extract_candles
 
 
 data = extract_candles(
-    symbol="AAPL"
+    symbol="HDFCBANK.NS"
 )
 
 print("Extraction successful!")

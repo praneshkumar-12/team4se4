@@ -40,6 +40,6 @@
 
 from analytics_etl.extract import extract_candles
 
-data = extract_candles("AAPL")
+data = extract_candles("HDFCBANK.NS")
 
 print(data)

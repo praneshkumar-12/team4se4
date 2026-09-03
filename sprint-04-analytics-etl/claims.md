@@ -1,53 +1,30 @@
 # Sprint 4 Business Claims
 
-> Replace the three placeholders below with claims calculated from the actual
-> Fauxnance pull. Do not invent the numbers. Each claim must be true of a
-> defined period and must name the chart that supports it.
-
-## Claim 1 — Weekly turnover
-
-**Claim:** `[Instrument/company] had the highest average daily turnover during
-[period], at approximately [amount], which was [X%] above [comparison].`
-
-**Evidence:** `artefacts/report.html#weekly-turnover`
-
-**What would have to be true for this claim to be wrong?**  
-`[State the data condition that would invalidate the claim.]`
-
-## Claim 2 — Largest weekly movement
-
-**Claim:** `[Instrument/company] recorded its largest weekly [gain/loss] of
-[X%] in the week beginning [date].`
-
-**Evidence:** `artefacts/report.html#weekly-returns`
-
-**What would have to be true for this claim to be wrong?**  
-`[State the data condition that would invalidate the claim.]`
-
-## Claim 3 — Volatility
-
-**Claim:** `[Instrument/company] had the highest average daily high-low range
-during [period], at [X%], compared with [comparison].`
-
-**Evidence:** `artefacts/report.html#weekly-range`
-
-**What would have to be true for this claim to be wrong?**  
-`[State the data condition that would invalidate the claim.]`
+> Claims below are calculated from the actual Fauxnance pull for the period
+> 2 Sep 2025 – 2 Sep 2026. Each claim names the chart that supports it.
 
 ## Scope
 
-Symbols: `INFY.NS` (Infosys), `RELIANCE.NS` (Reliance Industries), `AAPL`
-(Apple).
+Three symbols were chosen, one per sector, for cross-sector comparison:
 
-## Review trace
+- `RELIANCE.NS` (Reliance Industries) - conglomerate
+- `HDFCBANK.NS` (HDFC Bank) - banking
+- `INFY.NS` (Infosys) - IT
 
-For one selected claim, record the exact query/result rows used to calculate
-the number and retain them with the review evidence.
+## Claim 1 - Normalized price performance
 
-## Entry point
+**Claim:** All three stocks ended the period below their starting level. Infosys saw the sharpest decline compared to HDFC Bank and Reliance, where Reliance was relatively stronger.
 
-The project exposes the `analytics-etl` console script. It can be run with:
+**Evidence:** `Graph 1`
 
-```bash
-analytics-etl --start YYYY-MM-DD --end YYYY-MM-DD
-```
+## Claim 2 - Annual returns
+
+**Claim:** Reliance recorded the highest return among the three stocks in 2025. In 2026, all three stocks declined, but Reliance had the smallest fall.
+
+**Evidence:** `Graph 2`
+
+## Claim 3 - Volatility
+
+**Claim:** Infosys experienced greater short-term price fluctuations during the period when compared to Reliance and HDFC Bank having lower average daily price ranges.
+
+**Evidence:** `Graph 3`

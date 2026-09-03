@@ -1,4 +1,4 @@
-# Sprint 4 — Analytics ETL
+# Sprint 4 - Analytics ETL
 
 A small, repeatable ETL pipeline that extracts Fauxnance end-of-day candles,
 transforms and validates them, loads them into DuckDB, and writes an offline
@@ -6,9 +6,11 @@ Plotly dashboard.
 
 ## Scope
 
-- `INFY.NS` — Infosys
-- `RELIANCE.NS` — Reliance Industries
-- `AAPL` — Apple
+One symbol per sector, chosen for cross-sector comparison:
+
+- `INFY.NS` - Infosys (IT sector)
+- `RELIANCE.NS` - Reliance Industries (conglomerate)
+- `HDFCBANK.NS` - HDFC Bank (banking sector)
 
 The pipeline is deliberately source-independent after extraction: in Sprint 7
 the source can be replaced with platform trades while the transform/load shape

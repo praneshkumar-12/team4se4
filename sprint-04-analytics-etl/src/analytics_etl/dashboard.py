@@ -1,10 +1,8 @@
-
 from pathlib import Path
 
 import duckdb
 import pandas as pd
 import plotly.express as px
-
 
 # ============================================================
 # CONFIGURATION
@@ -13,16 +11,38 @@ import plotly.express as px
 DB_PATH = "artefacts/analytics.duckdb"
 OUTPUT = "artefacts/report.html"
 
-SYMBOLS = [
-    "INFY.NS",
-    "RELIANCE.NS",
-    "HDFCBANK.NS"
-]
+# One representative stock per sector, chosen for cross-sector comparison.
+SYMBOLS = ["INFY.NS", "RELIANCE.NS", "HDFCBANK.NS"]
+
+SECTORS = {
+    "INFY.NS": "IT",
+    "RELIANCE.NS": "conglomerate",
+    "HDFCBANK.NS": "banking",
+}
+
+# Claims are reviewed against artefacts/report.html per claims.md; see that
+# file for the queries used to derive these numbers.
+CLAIMS = {
+    "normalized-price-performance": (
+        "All three stocks ended the period below their starting level. "
+        "Infosys saw the sharpest decline compared to HDFC Bank and Reliance, "
+        "where Reliance was relatively stronger."
+    ),
+    "annual-returns": (
+        "Reliance recorded the highest return among the three stocks in 2025. "
+        "In 2026, all three stocks declined, but Reliance had the smallest fall."
+    ),
+    "daily-return-distribution": (
+        " Infosys experienced greater short-term price fluctuations during the period "
+        "when compared to Reliance and HDFC Bank having lower average daily price ranges."
+    ),
+}
 
 
 # ============================================================
 # LOAD DATA
 # ============================================================
+
 
 def load_data(db_path):
     con = duckdb.connect(db_path, read_only=True)
@@ -55,6 +75,7 @@ def load_data(db_path):
 # CREATE DASHBOARD
 # ============================================================
 
+
 def create_dashboard():
 
     df = load_data(DB_PATH)
@@ -68,14 +89,9 @@ def create_dashboard():
 
     df["date"] = pd.to_datetime(df["date"])
 
-    df = df[
-        df["symbol"].isin(SYMBOLS)
-    ].copy()
+    df = df[df["symbol"].isin(SYMBOLS)].copy()
 
-    df = df.sort_values(
-        ["symbol", "date"]
-    )
-
+    df = df.sort_values(["symbol", "date"])
 
     # ========================================================
     # CHART 1
@@ -100,15 +116,12 @@ def create_dashboard():
         line_dash="dash",
     )
 
-
     # ========================================================
     # CHART 2
     # DAILY RETURN DISTRIBUTION
     # ========================================================
 
-    return_data = df.dropna(
-        subset=["daily_return"]
-    )
+    return_data = df.dropna(subset=["daily_return"])
 
     fig2 = px.histogram(
         return_data,
@@ -123,26 +136,16 @@ def create_dashboard():
         },
     )
 
-
     # ========================================================
     # CHART 3
     # ANNUAL RETURNS
     # ========================================================
 
     annual = (
-        df.groupby(
-            ["symbol", "year"]
-        )["close"]
-        .agg(["first", "last"])
-        .reset_index()
+        df.groupby(["symbol", "year"])["close"].agg(["first", "last"]).reset_index()
     )
 
-    annual["annual_return"] = (
-        (
-            annual["last"]
-            / annual["first"]
-        ) - 1
-    ) * 100
+    annual["annual_return"] = ((annual["last"] / annual["first"]) - 1) * 100
 
     fig3 = px.bar(
         annual,
@@ -162,7 +165,6 @@ def create_dashboard():
         y=0,
         line_dash="dash",
     )
-
 
     # ========================================================
     # BUILD HTML
@@ -210,6 +212,14 @@ def create_dashboard():
                 border-radius: 8px;
             }}
 
+            .claim {{
+                background: #eef4ff;
+                border-left: 4px solid #4361ee;
+                padding: 12px 16px;
+                margin: 10px 0 20px;
+                font-style: italic;
+            }}
+
         </style>
 
     </head>
@@ -219,11 +229,13 @@ def create_dashboard():
         <h1>Market Analytics Dashboard</h1>
 
         <div class="subtitle">
-            Historical analysis of INFY, RELIANCE and AAPL
+            Historical analysis of {", ".join(
+                f"{symbol} ({SECTORS[symbol]})" for symbol in SYMBOLS
+            )}
         </div>
 
 
-        <div class="card">
+        <div class="card" id="normalized-price-performance">
 
             <h2>Normalized Price Performance</h2>
 
@@ -232,15 +244,19 @@ def create_dashboard():
                 starting value of 100.
             </p>
 
+            <p class="claim">
+                Claim: {CLAIMS["normalized-price-performance"]}
+            </p>
+
             {fig1.to_html(
                 full_html=False,
-                include_plotlyjs=True
+                include_plotlyjs="cdn"
             )}
 
         </div>
 
 
-        <div class="card">
+        <div class="card" id="annual-returns">
 
             <h2>Annual Returns</h2>
 
@@ -249,15 +265,19 @@ def create_dashboard():
                 instrument.
             </p>
 
+            <p class="claim">
+                Claim: {CLAIMS["annual-returns"]}
+            </p>
+
             {fig3.to_html(
                 full_html=False,
-                include_plotlyjs=False
+                include_plotlyjs=F"cdn"
             )}
 
         </div>
 
 
-        <div class="card">
+        <div class="card" id="daily-return-distribution">
 
             <h2>Daily Return Distribution</h2>
 
@@ -266,9 +286,13 @@ def create_dashboard():
                 returns for each instrument.
             </p>
 
+            <p class="claim">
+                Claim: {CLAIMS["daily-return-distribution"]}
+            </p>
+
             {fig2.to_html(
                 full_html=False,
-                include_plotlyjs=False
+                include_plotlyjs=F"cdn"
             )}
 
         </div>
@@ -277,7 +301,6 @@ def create_dashboard():
 
     </html>
     """
-
 
     # ========================================================
     # SAVE DASHBOARD
@@ -288,9 +311,7 @@ def create_dashboard():
         encoding="utf-8",
     )
 
-    print(
-        f"Dashboard created: {OUTPUT}"
-    )
+    print(f"Dashboard created: {OUTPUT}")
 
 
 # ============================================================
@@ -299,4 +320,3 @@ def create_dashboard():
 
 if __name__ == "__main__":
     create_dashboard()
-
