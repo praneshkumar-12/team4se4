@@ -112,8 +112,10 @@ public class OrderLogic {
                 quantity.compareTo(BigDecimal.ZERO) <= 0) {
 
             throw new DomainValidationException(
-                    "Quantity must be greater than zero"
-            );
+                "quantity",
+                quantity,
+                "Quantity must be greater than zero"
+        );
         }
 
         /*
@@ -130,8 +132,10 @@ public class OrderLogic {
                 price.compareTo(BigDecimal.ZERO) <= 0) {
 
             throw new DomainValidationException(
-                    "Price must be greater than zero"
-            );
+                "price",
+                price,
+                "Price must be greater than zero"
+        );
         }
 
         /*
