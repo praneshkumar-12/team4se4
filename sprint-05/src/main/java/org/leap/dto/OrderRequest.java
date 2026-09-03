@@ -1,4 +1,4 @@
-package org.leap.domain;
+package org.leap.dto;
 
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
@@ -11,8 +11,6 @@ import java.math.BigDecimal;
 import java.util.Objects;
 
 import org.leap.domain.enums.OrderSide;
-import
-
 /**
  * Order placement request DTO.
  *

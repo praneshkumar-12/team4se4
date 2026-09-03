@@ -1,6 +1,8 @@
 package org.leap.domain;
 
 import org.junit.jupiter.api.Test;
+import org.leap.domain.enums.*;
+
 
 import static org.junit.jupiter.api.Assertions.*;
 

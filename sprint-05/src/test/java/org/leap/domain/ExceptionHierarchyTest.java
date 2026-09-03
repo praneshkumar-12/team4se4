@@ -2,6 +2,8 @@ package org.leap.domain;
 
 import org.junit.jupiter.api.Test;
 
+import org.leap.exceptions.*;
+
 import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -27,18 +29,16 @@ class ExceptionHierarchyTest {
     @Test
     void accountNotActiveShouldBeDomainException() {
         AccountNotActiveException exception =
-                new AccountNotActiveException(
-                        AccountStatus.SUSPENDED
-                );
+            new AccountNotActiveException(10L);
 
         assertInstanceOf(
-                DomainException.class,
-                exception
+            DomainException.class,
+            exception
         );
 
         assertEquals(
-                "ACC-403",
-                exception.getCode()
+            "ACC-403",
+            exception.getCode()
         );
     }
 
@@ -62,8 +62,9 @@ class ExceptionHierarchyTest {
     void insufficientFundsShouldBeDomainException() {
         InsufficientFundsException exception =
                 new InsufficientFundsException(
-                        new BigDecimal("1000"),
-                        new BigDecimal("1500")
+                    10L,
+                    new BigDecimal("1000"),
+                    new BigDecimal("1500")
                 );
 
         assertInstanceOf(
@@ -71,16 +72,18 @@ class ExceptionHierarchyTest {
                 exception
         );
 
-        assertEquals(
-                "ORD-400",
-                exception.getCode()
-        );
-    }
+    assertEquals(
+            "ORD-400",
+            exception.getCode()
+    );
+}
 
     @Test
     void insufficientHoldingsShouldBeDomainException() {
         InsufficientHoldingsException exception =
                 new InsufficientHoldingsException(
+                        10L,
+                        20L,
                         new BigDecimal("5"),
                         new BigDecimal("10")
                 );
