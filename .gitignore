@@ -1,6 +1,19 @@
-**/target/
-.git/
-**/.idea/
-**/*.iml
-**/.vscode/
+# Secrets
 .env
+
+# Java / Maven build output
+target/
+*.class
+
+# IDE
+.idea/
+*.iml
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+
+# OS
+.DS_Store
+Thumbs.db
