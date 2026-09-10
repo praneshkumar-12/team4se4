@@ -1,0 +1,41 @@
+# Trade REST API runtime configuration.
+#
+# Every value that differs between a laptop and a container is read from the
+# environment. JWT_SECRET in particular has no default and appears in no
+# committed file: the service fails to start if it is not set.
+
+spring:
+  application:
+    name: trade-api
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/trading}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.xml
+    contexts: ${LIQUIBASE_CONTEXTS:}
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+jwt:
+  # HS256 signing secret, shared with the auth service. Environment only.
+  secret: ${JWT_SECRET}
+  issuer: ${JWT_ISSUER:auth-service}
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
