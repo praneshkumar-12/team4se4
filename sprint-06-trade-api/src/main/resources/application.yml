@@ -9,7 +9,7 @@ spring:
     name: trade-api
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/trading}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/trade_db}
     username: ${DB_USER:postgres}
     password: ${DB_PASSWORD:postgres}
 
@@ -28,7 +28,7 @@ jwt:
   issuer: ${JWT_ISSUER:auth-service}
 
 server:
-  port: ${SERVER_PORT:8080}
+  port: ${SERVER_PORT:8081}
 
 management:
   endpoints:

@@ -6,11 +6,51 @@
             http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.29.xsd">
 
     <!--
-        The Sprint 3 schema is applied by the database team's own scripts and is
-        assumed to exist. This changelog carries only the additive change Sprint 6
-        needs: a stable public identifier for an order, which the contract fixes
-        as a UUID exposed with an "ORD-" display prefix. The numeric orders.order_id
-        surrogate key stays as it is.
+        This changelog can build the trading database from nothing (the Docker
+        Postgres container starts empty) OR sit on top of a Sprint 3 schema that
+        the database team's own scripts already applied.
+
+        Every changeset below is guarded by a precondition that checks whether its
+        objects already exist. On a fresh database the preconditions pass and the
+        changeset runs; against an already-populated Sprint 3 database they fail
+        with onFail="MARK_RAN", so the changeset is recorded as run without
+        touching anything.
+    -->
+
+    <!-- Sprint 3: the seven tables with their CHECK / FK / UNIQUE constraints. -->
+    <changeSet id="001-sprint3-schema" author="team4">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="accounts"/>
+            </not>
+        </preConditions>
+        <sqlFile path="changes/001-sprint3-schema.sql"
+                 relativeToChangelogFile="true"
+                 splitStatements="true"
+                 endDelimiter=";"/>
+    </changeSet>
+
+    <!--
+        Sprint 3: the pl/pgsql trigger functions (updated_at maintenance, account
+        status-transition guard, terminal-order guard, order-account-active check)
+        and the query indexes. splitStatements="false" because the function bodies
+        are dollar-quoted and contain their own semicolons.
+    -->
+    <changeSet id="002-sprint3-triggers-indexes" author="team4">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT count(*) FROM pg_proc WHERE proname = 'update_updated_at'
+            </sqlCheck>
+        </preConditions>
+        <sqlFile path="changes/002-sprint3-triggers-indexes.sql"
+                 relativeToChangelogFile="true"
+                 splitStatements="false"/>
+    </changeSet>
+
+    <!--
+        Sprint 6 additive change: a stable public identifier for an order, which
+        the contract fixes as a UUID exposed with an "ORD-" display prefix. The
+        numeric orders.order_id surrogate key stays as it is.
     -->
     <changeSet id="2026-09-10-01-orders-public-id" author="team4">
         <preConditions onFail="MARK_RAN">
@@ -30,6 +70,25 @@
             <column name="account_id"/>
             <column name="created_at"/>
         </createIndex>
+    </changeSet>
+
+    <!--
+        Demo walkthrough data (Sprint 3 seed): three clients/accounts across the
+        ACTIVE / SUSPENDED / CLOSED states, three instruments, and one order of
+        every lifecycle state with a matching trade and holding.
+
+        context="demo" - loaded only when LIQUIBASE_CONTEXTS includes "demo"
+        (docker-compose sets this from .env). The precondition also skips it if
+        the accounts table is already populated.
+    -->
+    <changeSet id="003-demo-seed" author="team4" context="demo">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">SELECT count(*) FROM accounts</sqlCheck>
+        </preConditions>
+        <sqlFile path="changes/003-demo-seed.sql"
+                 relativeToChangelogFile="true"
+                 splitStatements="true"
+                 endDelimiter=";"/>
     </changeSet>
 
 </databaseChangeLog>

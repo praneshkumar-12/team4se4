@@ -3,13 +3,17 @@
 #
 #   JWT_SECRET must be set in .env (see .env.example). It is never baked into
 #   the image or committed.
+#
+#   The database starts empty; the Trade REST API builds the full Sprint 3
+#   schema (tables, constraints, triggers, indexes) with Liquibase on startup,
+#   and loads the demo seed when LIQUIBASE_CONTEXTS includes "demo".
 
 services:
 
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-trading}
+      POSTGRES_DB: ${POSTGRES_DB:-trade_db}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
@@ -17,7 +21,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-trading}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-trade_db}"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -27,19 +31,19 @@ services:
       context: .
       dockerfile: sprint-06-trade-api/Dockerfile
     environment:
-      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-trading}
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-trade_db}
       DB_USER: ${POSTGRES_USER:-postgres}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       JWT_ISSUER: ${JWT_ISSUER:-auth-service}
       LIQUIBASE_CONTEXTS: ${LIQUIBASE_CONTEXTS:-}
     ports:
-      - "8080:8080"
+      - "8085:8085"
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8085/actuator/health | grep -q '\"status\":\"UP\"'"]
       interval: 15s
       timeout: 3s
       retries: 5

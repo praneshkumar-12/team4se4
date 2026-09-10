@@ -29,8 +29,12 @@ cp ../.env.example ../.env      # then set JWT_SECRET
 docker compose -f ../docker-compose.yml up --build
 ```
 
-The service listens on `:8080`, migrates the additive `orders.public_id` column
-with Liquibase on startup, and answers `GET /actuator/health`.
+The service listens on `:8085` and answers `GET /actuator/health`. On startup
+Liquibase builds the database: against an empty Postgres it creates the full
+Sprint 3 schema (tables, constraints, trigger functions, indexes), adds the
+Sprint 6 `orders.public_id` column, and — when `LIQUIBASE_CONTEXTS` includes
+`demo` — loads the walkthrough seed. Every changeset is precondition-guarded, so
+running against a database the Sprint 3 scripts already built is a no-op.
 
 ## Layout
 
