@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.leap.tradeapi.mapper.PositionMapper">
+
+    <resultMap id="positionDomain" type="org.leap.domain.Position">
+        <constructor>
+            <idArg  column="holding_id"    javaType="java.lang.Long"/>
+            <arg    column="account_id"    javaType="java.lang.Long"/>
+            <arg    column="instrument_id" javaType="java.lang.Long"/>
+            <arg    column="quantity"      javaType="java.math.BigDecimal"/>
+            <arg    column="average_cost"  javaType="java.math.BigDecimal"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="positionRow" type="com.leap.tradeapi.mapper.row.PositionRow">
+        <constructor>
+            <idArg  column="account_id"   javaType="java.lang.Long"/>
+            <arg    column="symbol"        javaType="java.lang.String"/>
+            <arg    column="quantity"      javaType="java.math.BigDecimal"/>
+            <arg    column="average_cost"  javaType="java.math.BigDecimal"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findDomain" resultMap="positionDomain">
+        SELECT holding_id, account_id, instrument_id, quantity, average_cost
+        FROM client_holdings
+        WHERE account_id    = #{accountId}
+          AND instrument_id = #{instrumentId}
+    </select>
+
+    <insert id="insertPosition">
+        INSERT INTO client_holdings (account_id, instrument_id, quantity, average_cost)
+        VALUES (#{accountId}, #{instrumentId}, #{quantity}, #{averageCost})
+    </insert>
+
+    <update id="updatePosition">
+        UPDATE client_holdings
+        SET quantity     = #{quantity},
+            average_cost = #{averageCost},
+            updated_at   = CURRENT_TIMESTAMP
+        WHERE account_id    = #{accountId}
+          AND instrument_id = #{instrumentId}
+    </update>
+
+    <select id="findByAccount" resultMap="positionRow">
+        SELECT h.account_id,
+               i.ticker AS symbol,
+               h.quantity,
+               h.average_cost
+        FROM client_holdings h
+        JOIN instruments i ON i.instrument_id = h.instrument_id
+        WHERE h.account_id = #{accountId}
+          AND h.quantity   > 0
+        ORDER BY i.ticker
+    </select>
+
+</mapper>

@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.leap.tradeapi.mapper.OrderMapper">
+
+    <resultMap id="orderRow" type="com.leap.tradeapi.mapper.row.OrderRow">
+        <constructor>
+            <idArg  column="order_id"     javaType="java.lang.Long"/>
+            <arg    column="public_id"    javaType="java.lang.String"/>
+            <arg    column="account_id"   javaType="java.lang.Long"/>
+            <arg    column="symbol"       javaType="java.lang.String"/>
+            <arg    column="side"         javaType="org.leap.domain.enums.OrderSide"/>
+            <arg    column="status"       javaType="org.leap.domain.enums.OrderStatus"/>
+            <arg    column="quantity"     javaType="java.math.BigDecimal"/>
+            <arg    column="limit_price"  javaType="java.math.BigDecimal"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="orderHistoryRow" type="com.leap.tradeapi.mapper.row.OrderHistoryRow">
+        <constructor>
+            <idArg  column="public_id"       javaType="java.lang.String"/>
+            <arg    column="account_id"      javaType="java.lang.Long"/>
+            <arg    column="symbol"          javaType="java.lang.String"/>
+            <arg    column="side"            javaType="org.leap.domain.enums.OrderSide"/>
+            <arg    column="quantity"        javaType="java.math.BigDecimal"/>
+            <arg    column="limit_price"     javaType="java.math.BigDecimal"/>
+            <arg    column="executed_price"  javaType="java.math.BigDecimal"/>
+            <arg    column="status"          javaType="org.leap.domain.enums.OrderStatus"/>
+            <arg    column="idempotency_key" javaType="java.lang.String"/>
+            <arg    column="created_at"      javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="orderId" keyColumn="order_id">
+        INSERT INTO orders (
+            public_id, idempotency_key, quantity, account_id, instrument_id,
+            limit_price, status, side, order_type
+        )
+        VALUES (
+            #{publicId}, #{idempotencyKey}, #{quantity}, #{accountId}, #{instrumentId},
+            #{limitPrice}, #{status}, #{side}, #{orderType}
+        )
+    </insert>
+
+    <select id="findByPublicId" resultMap="orderRow">
+        SELECT o.order_id,
+               o.public_id,
+               o.account_id,
+               i.ticker AS symbol,
+               o.side,
+               o.status,
+               o.quantity,
+               o.limit_price
+        FROM orders o
+        JOIN instruments i ON i.instrument_id = o.instrument_id
+        WHERE o.public_id = #{publicId}
+    </select>
+
+    <update id="cancelIfNew">
+        UPDATE orders
+        SET status     = 'CANCELLED',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE public_id = #{publicId}
+          AND status    = 'NEW'
+    </update>
+
+    <!--
+        Order history, newest first. status / from / to are optional JDBC bind
+        parameters. The ORDER BY is a fixed literal: no identifier is
+        substituted into this statement, so there is no manifest allowlist entry.
+    -->
+    <select id="findHistory" resultMap="orderHistoryRow">
+        SELECT o.public_id,
+               o.account_id,
+               i.ticker AS symbol,
+               o.side,
+               o.quantity,
+               o.limit_price,
+               t.executed_price,
+               o.status,
+               o.idempotency_key,
+               o.created_at
+        FROM orders o
+        JOIN instruments i ON i.instrument_id = o.instrument_id
+        LEFT JOIN trades t ON t.order_id = o.order_id
+        WHERE o.account_id = #{accountId}
+        <if test="status != null">
+            AND o.status = #{status}
+        </if>
+        <if test="from != null">
+            AND o.created_at &gt;= #{from}
+        </if>
+        <if test="to != null">
+            AND o.created_at &lt;= #{to}
+        </if>
+        ORDER BY o.created_at DESC, o.order_id DESC
+    </select>
+
+</mapper>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.leap.tradeapi.mapper.InstrumentMapper">
+
+    <resultMap id="instrumentDomain" type="org.leap.domain.Instrument">
+        <constructor>
+            <idArg  column="instrument_id" javaType="java.lang.Long"/>
+            <arg    column="isin"          javaType="java.lang.String"/>
+            <arg    column="ticker"        javaType="java.lang.String"/>
+            <arg    column="name"          javaType="java.lang.String"/>
+            <arg    column="type"          javaType="org.leap.domain.enums.InstrumentType"/>
+            <arg    column="exchange"      javaType="java.lang.String"/>
+            <arg    column="currency"      javaType="java.lang.String"/>
+            <arg    column="is_active"     javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findTradableByTicker" resultMap="instrumentDomain">
+        SELECT instrument_id, isin, ticker, name, type, exchange, currency, is_active
+        FROM instruments
+        WHERE ticker = #{ticker}
+          AND is_active = TRUE
+    </select>
+
+</mapper>
