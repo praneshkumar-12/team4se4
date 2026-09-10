@@ -1,0 +1,214 @@
+{
+  "info": {
+    "name": "Trade API - Seed Data Collection",
+    "description": "4 endpoints using seed database fixtures",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Get Account Balance (Priya Menon - ACC-000001)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has cash and version', function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('cash');",
+              "    pm.expect(jsonData).to.have.property('version');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8083/api/v1/accounts/1/balance",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8083",
+          "path": [
+            "api",
+            "v1",
+            "accounts",
+            "1",
+            "balance"
+          ]
+        },
+        "description": "Get balance for account 1 (Priya Menon)\nSeed data: ACC-000001, ACTIVE, cash: 25000.00"
+      }
+    },
+    {
+      "name": "2. Get Account Positions (Priya Menon - ACC-000001)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response is an array', function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.be.an('array');",
+              "});",
+              "",
+              "pm.test('Contains ACME position', function () {",
+              "    var jsonData = pm.response.json();",
+              "    var acmePosition = jsonData.find(p => p.symbol === 'ACME');",
+              "    pm.expect(acmePosition).to.exist;",
+              "    pm.expect(acmePosition.quantity).to.equal(40);",
+              "    pm.expect(parseFloat(acmePosition.averageCost)).to.equal(20.00);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8083/api/v1/accounts/1/positions",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8083",
+          "path": [
+            "api",
+            "v1",
+            "accounts",
+            "1",
+            "positions"
+          ]
+        },
+        "description": "Get positions for account 1 (Priya Menon)\nSeed data: Holds 40 ACME at average cost 20.00"
+      }
+    },
+    {
+      "name": "3. Get Order History (Priya Menon - ACC-000001)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response is an array', function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.be.an('array');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8083/api/v1/accounts/1/orders",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8083",
+          "path": [
+            "api",
+            "v1",
+            "accounts",
+            "1",
+            "orders"
+          ]
+        },
+        "description": "Get order history for account 1 (Priya Menon)\nOptional filters: ?status=NEW&from=2024-01-01T00:00:00Z&to=2024-12-31T23:59:59Z"
+      }
+    },
+    {
+      "name": "4. Place Order - BUY ACME (Priya Menon - ACC-000001)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status is 201 or 200', function () {",
+              "    pm.expect([200, 201]).to.include(pm.response.code);",
+              "});",
+              "",
+              "pm.test('Response has orderId and publicId', function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('orderId');",
+              "    pm.expect(jsonData).to.have.property('publicId');",
+              "    pm.expect(jsonData.status).to.equal('NEW');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"accountId\": 1,\n  \"symbol\": \"ACME\",\n  \"side\": \"BUY\",\n  \"quantity\": 10,\n  \"price\": 22.50,\n  \"idempotencyKey\": \"order-{{$timestamp}}-buy-acme-001\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8083/api/v1/orders",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8083",
+          "path": [
+            "api",
+            "v1",
+            "orders"
+          ]
+        },
+        "description": "Place a BUY order for 10 ACME shares at $22.50 for account 1 (Priya Menon)\nNote: idempotencyKey is unique per request to ensure idempotency"
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8083",
+      "type": "string"
+    },
+    {
+      "key": "account_id",
+      "value": "1",
+      "type": "string"
+    }
+  ]
+}
