@@ -28,7 +28,7 @@ jwt:
   issuer: ${JWT_ISSUER:auth-service}
 
 server:
-  port: ${SERVER_PORT:8081}
+  port: ${SERVER_PORT:8085}
 
 management:
   endpoints:
