@@ -1,0 +1,25 @@
+# Test profile: H2 in place of Postgres, Liquibase off, schema and fixture
+# applied by spring.sql.init. No container required.
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:tradeapi;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+      data-locations: classpath:seed.sql
+  liquibase:
+    enabled: false
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+jwt:
+  secret: test-secret-value-at-least-32-characters-long-for-hs256
+  issuer: auth-service
