@@ -11,21 +11,30 @@ import org.leap.events.Topics;
 import org.leap.executor.db.ConnectionFactory;
 import org.leap.executor.db.JdbcOrderExistenceChecker;
 import org.leap.executor.exec.RetryPolicy;
+import org.leap.executor.fauxnance.FauxnanceClient;
 import org.leap.executor.kafka.DeadLetterPublisher;
 import org.leap.executor.kafka.KafkaDeadLetterPublisher;
 import org.leap.executor.kafka.OrderEventConsumer;
 import org.leap.executor.kafka.OrderExistenceChecker;
 import org.leap.executor.kafka.OrderProcessor;
 import org.leap.executor.kafka.ResilientRecordProcessor;
+import org.leap.executor.poller.MarketDataPoller;
+import org.leap.executor.poller.WatchedSymbolsRepository;
+import org.leap.pricing.Quote;
 
 import java.sql.DriverManager;
+import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 
 /**
- * Starts the order consumer. SEC4-614/615 own the real order-processing
- * wiring; the no-op {@code orderProcessor} below exists only so this module
- * runs end-to-end and is expected to be replaced at merge time.
+ * Starts the order consumer and the market-data poller in the same process.
+ * SEC4-614/615 own the real order-processing and Fauxnance-client wiring;
+ * the placeholders below exist only so this module runs end-to-end and are
+ * expected to be replaced at merge time.
  */
 public final class Main {
 
@@ -50,8 +59,17 @@ public final class Main {
         consumerThread.setDaemon(true);
         consumerThread.start();
 
+        WatchedSymbolsRepository watchedSymbolsRepository = new WatchedSymbolsRepository(connectionFactory);
+        FauxnanceClient fauxnanceClient = new UnwiredFauxnanceClient();
+        long configuredPollIntervalSeconds = envLong("POLL_INTERVAL_SECONDS", MarketDataPoller.MIN_POLL_INTERVAL_SECONDS);
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+        MarketDataPoller poller = new MarketDataPoller(watchedSymbolsRepository, fauxnanceClient, producer,
+                objectMapper, scheduler, configuredPollIntervalSeconds);
+        poller.start();
+
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             orderEventConsumer.stop();
+            scheduler.shutdownNow();
             producer.close();
         }));
     }
@@ -88,5 +106,31 @@ public final class Main {
             throw new IllegalStateException(name + " must be set");
         }
         return value;
+    }
+
+    private static long envLong(String name, long defaultValue) {
+        String value = System.getenv(name);
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        return Long.parseLong(value);
+    }
+
+    /** Replaced by SEC4-614's real Fauxnance HTTP client at merge time. */
+    private static final class UnwiredFauxnanceClient implements FauxnanceClient {
+        @Override
+        public Quote getQuote(String symbol) {
+            throw new UnsupportedOperationException("Fauxnance client not wired yet (see SEC4-614)");
+        }
+
+        @Override
+        public Map<String, Quote> getQuotes(List<String> symbols) {
+            throw new UnsupportedOperationException("Fauxnance client not wired yet (see SEC4-614)");
+        }
+
+        @Override
+        public int getRemainingDailyBudget() {
+            throw new UnsupportedOperationException("Fauxnance client not wired yet (see SEC4-614)");
+        }
     }
 }
