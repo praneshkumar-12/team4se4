@@ -54,3 +54,49 @@ past it — nothing is silently dropped.
 ```bash
 pytest
 ```
+
+## SonarQube / DevSecOps (SEC4-620)
+
+`sonar-project.properties` in this directory (`sonar.projectKey=analytics-pipeline`,
+sources `src`, tests `tests`) is the scan config for this project. To run it
+locally against the `sonarqube` service in the repo root's `docker-compose.yml`:
+
+```bash
+docker compose up -d sonarqube
+# open http://localhost:9000, sign in admin/admin, change the password,
+# generate a token, then:
+export SONAR_TOKEN=...          # never commit this
+docker run --rm --network=host -e SONAR_HOST_URL=http://localhost:9000 \
+  -e SONAR_TOKEN="$SONAR_TOKEN" -v "$(pwd):/usr/src" \
+  sonarsource/sonar-scanner-cli
+```
+
+Local dependency scan (run from `etl/` with the venv active):
+
+```bash
+pip install pip-audit
+python -m pip_audit
+```
+
+Local secret scan (from the repo root; `gitleaks` is the tool named in the
+ticket, `detect-secrets` was used here as an equivalent since no container
+runtime was available to pull the `gitleaks` image):
+
+```bash
+pip install detect-secrets
+python -m detect_secrets scan --exclude-files '(\.venv/|target/|node_modules/|\.duckdb$|\.git/)' .
+```
+
+**Status as of this branch**: dependency scan run and fixed (`setuptools`
+floor raised to `>=83.0.0` in `pyproject.toml`, clearing 4 known CVEs — see
+git history). Secret scan run against the whole repo; the only 3 hits are
+pre-existing `Secret Keyword` matches in `sprint-06-trade-api` test fixtures
+and a `${DB_PASSWORD:postgres}` env-default, all outside this sprint's scope
+and, on inspection, apparent false positives (test-only placeholder values,
+not real credentials) — flagged for team review per SEC4-620's rule against
+unilaterally dismissing a finding, not fixed here since that module belongs
+to a different sprint's branch. The live SonarQube gate itself (Java
+`executor/` scan, dashboard pass/fail) has not been run: `executor/` doesn't
+exist on this branch yet (SEC4-614, a teammate's ticket), and this ticket is
+meant to run after the other members' branches are merged — see the ticket
+notes and `00-MASTER-PLAN-sprint7.md`.

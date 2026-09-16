@@ -17,7 +17,9 @@ dev = [
 etl = "etl.cli:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+# >=83.0.0: floor clears the setuptools CVEs pip-audit flags below that
+# (PYSEC-2022-43012, PYSEC-2025-49, PYSEC-2026-1918, PYSEC-2026-3447).
+requires = ["setuptools>=83.0.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
