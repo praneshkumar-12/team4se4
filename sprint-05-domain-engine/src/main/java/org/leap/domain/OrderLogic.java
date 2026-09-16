@@ -39,8 +39,13 @@ public class OrderLogic {
     /*
      * synchronized keeps the duplicate check and order creation
      * atomic for the Sprint 5 in-memory implementation.
+     *
+     * Runs rules 1-8 and, if every rule passes, returns a new Order at status
+     * NEW. It does not fill: no account debit/credit, no position mutation,
+     * no order.fill(). Pricing and settlement happen later, once the Trade
+     * Executor has read a real market quote (Sprint 7).
      */
-    public synchronized Order placeOrder(OrderRequest request) {
+    public synchronized Order acceptOrder(OrderRequest request) {
 
         Objects.requireNonNull(request);
 
@@ -152,7 +157,10 @@ public class OrderLogic {
             throw new DuplicateOrderException(idempotencyKey);
         }
 
-        // All business rules passed, so the domain state can be changed.
+        // All business rules passed: build the order at NEW and record it for
+        // the idempotency check (rule 8). No cash, position or fill movement
+        // happens here anymore - that is the executor's job once it has priced
+        // the order against a market quote.
         Order order = new Order(
                 nextOrderId++,
                 idempotencyKey,
@@ -164,37 +172,6 @@ public class OrderLogic {
                 price
         );
 
-        if (request.getSide() == OrderSide.BUY) {
-
-            account.debit(orderValue);
-
-            if (position == null) {
-                position = new Position(
-                        nextHoldingId(),
-                        account.getAccountId(),
-                        instrument.getInstrumentId(),
-                        BigDecimal.ZERO,
-                        BigDecimal.ZERO
-                );
-
-                positions.put(
-                        positionKey(
-                                account.getAccountId(),
-                                request.getSymbol()
-                        ),
-                        position
-                );
-            }
-
-            position.buy(quantity, price);
-
-        } else {
-            position.sell(quantity);
-            account.credit(orderValue);
-        }
-
-        order.fill();
-
         orders.put(idempotencyKey, order);
 
         return order;
@@ -202,9 +179,5 @@ public class OrderLogic {
 
     private String positionKey(Long accountId, String symbol) {
         return accountId + ":" + symbol;
-    }
-
-    private long nextHoldingId() {
-        return positions.size() + 1L;
     }
 }
