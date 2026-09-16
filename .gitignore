@@ -5,6 +5,19 @@
 target/
 *.class
 
+# Python / ETL (Sprint 7)
+etl/.venv/
+etl/__pycache__/
+etl/**/__pycache__/
+*.egg-info/
+etl/data/*.duckdb
+etl/data/*.duckdb.wal
+
+# SonarQube / DevSecOps scan output (Sprint 7)
+.scannerwork/
+etl/.scannerwork/
+executor/.scannerwork/
+
 # IDE
 .idea/
 *.iml
