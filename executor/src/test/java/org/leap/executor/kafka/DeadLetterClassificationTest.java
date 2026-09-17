@@ -52,9 +52,9 @@ class DeadLetterClassificationTest {
                 retryPolicy, deadLetterPublisher, Set.of("ORDER_PLACED"));
     }
 
-    private byte[] validMessage(long orderId) {
+    private byte[] validMessage(String orderId) {
         return ("{\"eventId\":\"e1\",\"eventType\":\"ORDER_PLACED\",\"eventTime\":\"2026-09-16T00:00:00Z\","
-                + "\"source\":\"trade-api\",\"schemaVersion\":1,\"payload\":{\"orderId\":" + orderId + "}}")
+                + "\"source\":\"trade-api\",\"schemaVersion\":1,\"payload\":{\"orderId\":\"" + orderId + "\"}}")
                 .getBytes(StandardCharsets.UTF_8);
     }
 
@@ -68,8 +68,8 @@ class DeadLetterClassificationTest {
 
     @Test
     void unknownOrderIdIsDeadLetteredOnFirstAttempt() throws OrderLookupException {
-        byte[] message = validMessage(999L);
-        when(orderExistenceChecker.exists(999L)).thenReturn(false);
+        byte[] message = validMessage("999");
+        when(orderExistenceChecker.exists("999")).thenReturn(false);
 
         processor.process("orders", "acc-1", message);
 
@@ -79,9 +79,9 @@ class DeadLetterClassificationTest {
 
     @Test
     void transientLookupFailureIsRetriedThenSucceeds() throws OrderLookupException {
-        byte[] message = validMessage(42L);
+        byte[] message = validMessage("42");
         AtomicInteger calls = new AtomicInteger();
-        when(orderExistenceChecker.exists(42L)).thenAnswer(invocation -> {
+        when(orderExistenceChecker.exists("42")).thenAnswer(invocation -> {
             if (calls.incrementAndGet() < 2) {
                 throw new OrderLookupException("connection lost", null);
             }
@@ -97,8 +97,8 @@ class DeadLetterClassificationTest {
 
     @Test
     void lockBudgetExhaustionIsRetriedThenDeadLetteredOnceBudgetIsSpent() throws OrderLookupException {
-        byte[] message = validMessage(7L);
-        when(orderExistenceChecker.exists(7L)).thenReturn(true);
+        byte[] message = validMessage("7");
+        when(orderExistenceChecker.exists("7")).thenReturn(true);
         org.mockito.Mockito.doThrow(new TransientProcessingException("optimistic lock budget exhausted"))
                 .when(orderProcessor).process(any());
 
@@ -112,8 +112,8 @@ class DeadLetterClassificationTest {
 
     @Test
     void poisonMessageDoesNotBlockThePartitionSubsequentMessagesStillProcess() throws OrderLookupException {
-        byte[] goodMessage = validMessage(5L);
-        when(orderExistenceChecker.exists(5L)).thenReturn(true);
+        byte[] goodMessage = validMessage("5");
+        when(orderExistenceChecker.exists("5")).thenReturn(true);
 
         processor.process("orders", "acc-1", MALFORMED);
         processor.process("orders", "acc-1", goodMessage);

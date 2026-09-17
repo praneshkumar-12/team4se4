@@ -30,6 +30,7 @@ import static org.mockito.Mockito.when;
 class ExecutionServiceTest {
 
     private static final long ORDER_ID = 1L;
+    private static final String ORDER_PUBLIC_ID = "11111111-1111-1111-1111-111111111111";
     private static final long ACCOUNT_ID = 1L;
     private static final long INSTRUMENT_ID = 1L;
 
@@ -48,6 +49,7 @@ class ExecutionServiceTest {
         fauxnanceClient = mock(FauxnanceClient.class);
         settlementService = new FakeSettlementService();
         service = new ExecutionService(orderRepository, instrumentRepository, accountRepository, fauxnanceClient, settlementService);
+        when(orderRepository.resolveNumericId(ORDER_PUBLIC_ID)).thenReturn(ORDER_ID);
     }
 
     private static Order buyOrder(BigDecimal quantity, String limitPrice) {
@@ -69,7 +71,7 @@ class ExecutionServiceTest {
     void an_order_already_settled_is_skipped_without_settling_again() {
         when(orderRepository.findStatus(ORDER_ID)).thenReturn(OrderStatus.FILLED);
 
-        service.execute(ORDER_ID);
+        service.execute(ORDER_PUBLIC_ID);
 
         assertTrue(settlementService.decisions.isEmpty());
         verifyNoInteractions(instrumentRepository, accountRepository, fauxnanceClient);
@@ -83,7 +85,7 @@ class ExecutionServiceTest {
         when(orderRepository.findById(ORDER_ID)).thenReturn(buyOrder(BigDecimal.TEN, "25.50"));
         when(instrumentRepository.findById(INSTRUMENT_ID)).thenReturn(null);
 
-        service.execute(ORDER_ID);
+        service.execute(ORDER_PUBLIC_ID);
 
         assertEquals("INSTRUMENT_NOT_TRADABLE", settlementService.lastDecision().rejectionReason());
         verifyNoInteractions(fauxnanceClient);
@@ -98,7 +100,7 @@ class ExecutionServiceTest {
         when(instrumentRepository.findById(INSTRUMENT_ID)).thenReturn(tradableInstrument());
         when(accountRepository.findById(ACCOUNT_ID)).thenReturn(account("10000.00", AccountStatus.SUSPENDED));
 
-        service.execute(ORDER_ID);
+        service.execute(ORDER_PUBLIC_ID);
 
         FillDecision decision = settlementService.lastDecision();
         assertFalse(decision.fill());
@@ -113,7 +115,7 @@ class ExecutionServiceTest {
         when(instrumentRepository.findById(INSTRUMENT_ID)).thenReturn(tradableInstrument());
         when(accountRepository.findById(ACCOUNT_ID)).thenReturn(account("100.00", AccountStatus.ACTIVE));
 
-        service.execute(ORDER_ID);
+        service.execute(ORDER_PUBLIC_ID);
 
         FillDecision decision = settlementService.lastDecision();
         assertFalse(decision.fill());
@@ -129,7 +131,7 @@ class ExecutionServiceTest {
         when(accountRepository.findById(ACCOUNT_ID)).thenReturn(account("100000.00", AccountStatus.ACTIVE));
         when(fauxnanceClient.getQuote("ACME")).thenThrow(new FauxnanceException("outage"));
 
-        service.execute(ORDER_ID);
+        service.execute(ORDER_PUBLIC_ID);
 
         FillDecision decision = settlementService.lastDecision();
         assertFalse(decision.fill());
@@ -147,7 +149,7 @@ class ExecutionServiceTest {
         when(fauxnanceClient.getQuote("ACME"))
                 .thenReturn(new Quote("ACME", new BigDecimal("25.00"), new BigDecimal("25.40"), new BigDecimal("25.20")));
 
-        service.execute(ORDER_ID);
+        service.execute(ORDER_PUBLIC_ID);
 
         FillDecision decision = settlementService.lastDecision();
         assertTrue(decision.fill());

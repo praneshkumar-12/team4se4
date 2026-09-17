@@ -48,13 +48,16 @@ public class ExecutionService {
         this.settlementService = settlementService;
     }
 
-    public void execute(long orderId) {
-        OrderStatus status = orderRepository.findStatus(orderId);
+    /** {@code publicOrderId} is the order's public UUID, as carried on the {@code orders} topic. */
+    public void execute(String publicOrderId) {
+        Long orderId = orderRepository.resolveNumericId(publicOrderId);
 
-        if (status == null) {
-            log.log(Level.WARNING, "orderId={0} not found, nothing to execute", orderId);
+        if (orderId == null) {
+            log.log(Level.WARNING, "publicOrderId={0} not found, nothing to execute", publicOrderId);
             return;
         }
+
+        OrderStatus status = orderRepository.findStatus(orderId);
 
         // Duplicate-delivery defense: idempotency at acceptance is already
         // guaranteed by the DB unique constraint on orders.idempotency_key;

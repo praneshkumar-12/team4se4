@@ -86,7 +86,7 @@ public class ResilientRecordProcessor {
         if (!payload.hasNonNull("orderId")) {
             throw new PoisonMessageException("Missing order identifier");
         }
-        long orderId = payload.get("orderId").asLong();
+        String orderId = payload.get("orderId").asText();
 
         String eventId = root.path("eventId").asText(null);
         if (eventId == null) {

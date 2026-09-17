@@ -3,7 +3,6 @@ package org.leap.executor.exec;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 
@@ -61,6 +60,7 @@ class ExecutorIntegrationTest {
                     + "isin VARCHAR(12) NOT NULL, ticker VARCHAR(20) NOT NULL, name VARCHAR(255) NOT NULL, "
                     + "type VARCHAR(30) NOT NULL, exchange VARCHAR(50) NOT NULL, is_active BOOLEAN NOT NULL, currency CHAR(3) NOT NULL)");
             st.execute("CREATE TABLE orders (order_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, "
+                    + "public_id VARCHAR(36) NOT NULL, "
                     + "idempotency_key VARCHAR(255) NOT NULL, quantity NUMERIC(20,8) NOT NULL, account_id BIGINT NOT NULL, "
                     + "instrument_id BIGINT NOT NULL, limit_price NUMERIC(20,8), status VARCHAR(20) NOT NULL, "
                     + "side VARCHAR(10) NOT NULL, order_type VARCHAR(20) NOT NULL)");
@@ -87,25 +87,23 @@ class ExecutorIntegrationTest {
         setupConnection.close();
     }
 
-    private long insertNewOrder(String idempotencyKey, BigDecimal quantity, BigDecimal limitPrice, String side) throws SQLException {
+    /** @return the inserted order's public UUID (what a real {@code orders} Kafka message actually carries). */
+    private String insertNewOrder(String idempotencyKey, BigDecimal quantity, BigDecimal limitPrice, String side) throws SQLException {
+        String publicId = java.util.UUID.randomUUID().toString();
         try (Statement st = setupConnection.createStatement()) {
-            st.execute("INSERT INTO orders (idempotency_key, quantity, account_id, instrument_id, limit_price, status, side, order_type) "
-                            + "VALUES ('" + idempotencyKey + "', " + quantity + ", 1, 1, " + limitPrice + ", 'NEW', '" + side + "', 'LIMIT')",
-                    Statement.RETURN_GENERATED_KEYS);
-            try (ResultSet rs = st.getGeneratedKeys()) {
-                rs.next();
-                return rs.getLong(1);
-            }
+            st.execute("INSERT INTO orders (public_id, idempotency_key, quantity, account_id, instrument_id, limit_price, status, side, order_type) "
+                    + "VALUES ('" + publicId + "', '" + idempotencyKey + "', " + quantity + ", 1, 1, " + limitPrice + ", 'NEW', '" + side + "', 'LIMIT')");
         }
+        return publicId;
     }
 
     @Test
     void a_marketable_buy_is_loaded_priced_and_filled() throws SQLException {
-        long orderId = insertNewOrder("it-fill-1", new BigDecimal("10"), new BigDecimal("25.50"), "BUY");
+        String publicId = insertNewOrder("it-fill-1", new BigDecimal("10"), new BigDecimal("25.50"), "BUY");
         when(fauxnanceClient.getQuote("ACME"))
                 .thenReturn(new Quote("ACME", new BigDecimal("25.00"), new BigDecimal("25.40"), new BigDecimal("25.20")));
 
-        service.execute(orderId);
+        service.execute(publicId);
 
         FillDecision decision = settlementService.lastDecision();
         assertTrue(decision.fill());
@@ -114,11 +112,11 @@ class ExecutorIntegrationTest {
 
     @Test
     void an_unmarketable_buy_is_rejected_not_marketable() throws SQLException {
-        long orderId = insertNewOrder("it-reject-1", new BigDecimal("10"), new BigDecimal("20.00"), "BUY");
+        String publicId = insertNewOrder("it-reject-1", new BigDecimal("10"), new BigDecimal("20.00"), "BUY");
         when(fauxnanceClient.getQuote("ACME"))
                 .thenReturn(new Quote("ACME", new BigDecimal("25.00"), new BigDecimal("25.40"), new BigDecimal("25.20")));
 
-        service.execute(orderId);
+        service.execute(publicId);
 
         FillDecision decision = settlementService.lastDecision();
         assertFalse(decision.fill());
@@ -127,10 +125,10 @@ class ExecutorIntegrationTest {
 
     @Test
     void a_fauxnance_outage_resolves_the_order_as_no_price_available() throws SQLException {
-        long orderId = insertNewOrder("it-nopricing-1", new BigDecimal("10"), new BigDecimal("25.50"), "BUY");
+        String publicId = insertNewOrder("it-nopricing-1", new BigDecimal("10"), new BigDecimal("25.50"), "BUY");
         when(fauxnanceClient.getQuote("ACME")).thenThrow(new FauxnanceException("simulated outage"));
 
-        service.execute(orderId);
+        service.execute(publicId);
 
         FillDecision decision = settlementService.lastDecision();
         assertFalse(decision.fill());

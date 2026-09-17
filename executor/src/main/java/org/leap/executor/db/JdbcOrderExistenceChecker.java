@@ -10,7 +10,7 @@ import java.sql.SQLException;
 
 public class JdbcOrderExistenceChecker implements OrderExistenceChecker {
 
-    private static final String QUERY = "SELECT 1 FROM orders WHERE order_id = ?";
+    private static final String QUERY = "SELECT 1 FROM orders WHERE public_id = ?";
 
     private final ConnectionFactory connectionFactory;
 
@@ -19,10 +19,10 @@ public class JdbcOrderExistenceChecker implements OrderExistenceChecker {
     }
 
     @Override
-    public boolean exists(long orderId) throws OrderLookupException {
+    public boolean exists(String orderId) throws OrderLookupException {
         try (Connection connection = connectionFactory.getConnection();
              PreparedStatement statement = connection.prepareStatement(QUERY)) {
-            statement.setLong(1, orderId);
+            statement.setString(1, orderId);
             try (ResultSet resultSet = statement.executeQuery()) {
                 return resultSet.next();
             }

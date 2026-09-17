@@ -56,6 +56,25 @@ public class OrderRepository {
     }
 
     /**
+     * The internal numeric {@code order_id} for a given public UUID — the
+     * only place this module needs to cross from the identifier Kafka
+     * messages carry (see {@code OrderEvent}) to the one every other query
+     * here is keyed by. {@code null} if no order has that public id.
+     */
+    public Long resolveNumericId(String publicId) {
+        String sql = "SELECT order_id FROM orders WHERE public_id = ?";
+        try (Connection conn = connectionFactory.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, publicId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getLong("order_id") : null;
+            }
+        } catch (SQLException e) {
+            throw new RepositoryException("Failed to resolve order " + publicId, e);
+        }
+    }
+
+    /**
      * The order's current persisted status — the duplicate-delivery check's
      * source of truth. {@code null} if the order does not exist.
      */
