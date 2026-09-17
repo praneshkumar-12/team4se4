@@ -68,7 +68,7 @@ class OrderLogicTest {
         AccountNotFoundException exception =
                 assertThrows(
                         AccountNotFoundException.class,
-                        () -> service.placeOrder(request)
+                        () -> service.acceptOrder(request)
                 );
 
         assertEquals(
@@ -83,7 +83,7 @@ class OrderLogicTest {
         OrderRequest request = validBuy();
 
         assertDoesNotThrow(
-                () -> service.placeOrder(request)
+                () -> service.acceptOrder(request)
         );
     }
 
@@ -103,7 +103,7 @@ class OrderLogicTest {
         AccountNotActiveException exception =
                 assertThrows(
                         AccountNotActiveException.class,
-                        () -> service.placeOrder(validBuy())
+                        () -> service.acceptOrder(validBuy())
                 );
 
         assertEquals(
@@ -123,7 +123,7 @@ class OrderLogicTest {
         AccountNotActiveException exception =
                 assertThrows(
                         AccountNotActiveException.class,
-                        () -> service.placeOrder(validBuy())
+                        () -> service.acceptOrder(validBuy())
                 );
 
         assertEquals(
@@ -136,7 +136,7 @@ class OrderLogicTest {
     void rule2_shouldNotFireForActiveAccount() {
 
         assertDoesNotThrow(
-                () -> service.placeOrder(validBuy())
+                () -> service.acceptOrder(validBuy())
         );
     }
 
@@ -160,7 +160,7 @@ class OrderLogicTest {
         InstrumentNotFoundException exception =
                 assertThrows(
                         InstrumentNotFoundException.class,
-                        () -> service.placeOrder(request)
+                        () -> service.acceptOrder(request)
                 );
 
         assertEquals(
@@ -180,7 +180,7 @@ class OrderLogicTest {
         InstrumentNotFoundException exception =
                 assertThrows(
                         InstrumentNotFoundException.class,
-                        () -> service.placeOrder(validBuy())
+                        () -> service.acceptOrder(validBuy())
                 );
 
         assertEquals(
@@ -193,7 +193,7 @@ class OrderLogicTest {
     void rule3_shouldNotFireForTradableInstrument() {
 
         assertDoesNotThrow(
-                () -> service.placeOrder(validBuy())
+                () -> service.acceptOrder(validBuy())
         );
     }
 
@@ -217,7 +217,7 @@ class OrderLogicTest {
         DomainException exception =
                 assertThrows(
                         DomainException.class,
-                        () -> service.placeOrder(request)
+                        () -> service.acceptOrder(request)
                 );
 
         assertEquals(
@@ -241,7 +241,7 @@ class OrderLogicTest {
         DomainException exception =
                 assertThrows(
                         DomainException.class,
-                        () -> service.placeOrder(request)
+                        () -> service.acceptOrder(request)
                 );
 
         assertEquals(
@@ -254,7 +254,7 @@ class OrderLogicTest {
     void rule4_shouldNotFireForPositiveWholeQuantity() {
 
         assertDoesNotThrow(
-                () -> service.placeOrder(validBuy())
+                () -> service.acceptOrder(validBuy())
         );
     }
 
@@ -278,7 +278,7 @@ class OrderLogicTest {
         DomainException exception =
                 assertThrows(
                         DomainException.class,
-                        () -> service.placeOrder(request)
+                        () -> service.acceptOrder(request)
                 );
 
         assertEquals(
@@ -302,7 +302,7 @@ class OrderLogicTest {
         DomainException exception =
                 assertThrows(
                         DomainException.class,
-                        () -> service.placeOrder(request)
+                        () -> service.acceptOrder(request)
                 );
 
         assertEquals(
@@ -315,7 +315,7 @@ class OrderLogicTest {
     void rule5_shouldNotFireForPositivePrice() {
 
         assertDoesNotThrow(
-                () -> service.placeOrder(validBuy())
+                () -> service.acceptOrder(validBuy())
         );
     }
 
@@ -339,7 +339,7 @@ class OrderLogicTest {
         InsufficientFundsException exception =
                 assertThrows(
                         InsufficientFundsException.class,
-                        () -> service.placeOrder(request)
+                        () -> service.acceptOrder(request)
                 );
 
         assertEquals(
@@ -361,7 +361,7 @@ class OrderLogicTest {
         );
 
         assertDoesNotThrow(
-                () -> service.placeOrder(request)
+                () -> service.acceptOrder(request)
         );
     }
 
@@ -396,7 +396,7 @@ class OrderLogicTest {
         InsufficientHoldingsException exception =
                 assertThrows(
                         InsufficientHoldingsException.class,
-                        () -> service.placeOrder(request)
+                        () -> service.acceptOrder(request)
                 );
 
         assertEquals(
@@ -429,7 +429,7 @@ class OrderLogicTest {
         );
 
         assertDoesNotThrow(
-                () -> service.placeOrder(request)
+                () -> service.acceptOrder(request)
         );
     }
 
@@ -443,7 +443,7 @@ class OrderLogicTest {
 
         OrderRequest first = validBuy();
 
-        service.placeOrder(first);
+        service.acceptOrder(first);
 
         // Placing the first order spends the account's cash; top it up so the
         // duplicate is rejected for its idempotency key, not insufficient funds.
@@ -461,7 +461,7 @@ class OrderLogicTest {
         DuplicateOrderException exception =
                 assertThrows(
                         DuplicateOrderException.class,
-                        () -> service.placeOrder(duplicate)
+                        () -> service.acceptOrder(duplicate)
                 );
 
         assertEquals(
@@ -473,7 +473,7 @@ class OrderLogicTest {
     @Test
     void rule8_shouldAllowDifferentIdempotencyKey() {
 
-        service.placeOrder(validBuy());
+        service.acceptOrder(validBuy());
 
         // Placing the first order spends the account's cash; top it up so the
         // second order is evaluated on its idempotency key, not insufficient funds.
@@ -489,7 +489,7 @@ class OrderLogicTest {
         );
 
         assertDoesNotThrow(
-                () -> service.placeOrder(second)
+                () -> service.acceptOrder(second)
         );
     }
 
@@ -513,7 +513,7 @@ class OrderLogicTest {
         DomainException exception =
                 assertThrows(
                         DomainException.class,
-                        () -> service.placeOrder(request)
+                        () -> service.acceptOrder(request)
                 );
 
         // Rule 1 must win over rule 3.
@@ -543,7 +543,7 @@ class OrderLogicTest {
         DomainException exception =
                 assertThrows(
                         DomainException.class,
-                        () -> service.placeOrder(request)
+                        () -> service.acceptOrder(request)
                 );
 
         // Rule 2 must win before rule 6.
@@ -573,7 +573,7 @@ class OrderLogicTest {
         DomainException exception =
                 assertThrows(
                         DomainException.class,
-                        () -> service.placeOrder(request)
+                        () -> service.acceptOrder(request)
                 );
 
         assertEquals(
@@ -597,7 +597,7 @@ class OrderLogicTest {
         DomainException exception =
                 assertThrows(
                         DomainException.class,
-                        () -> service.placeOrder(request)
+                        () -> service.acceptOrder(request)
                 );
 
         // Rule 4 must win over rule 5.
@@ -622,7 +622,7 @@ class OrderLogicTest {
         DomainException exception =
                 assertThrows(
                         DomainException.class,
-                        () -> service.placeOrder(request)
+                        () -> service.acceptOrder(request)
                 );
 
         assertEquals(
