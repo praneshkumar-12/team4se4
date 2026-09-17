@@ -17,16 +17,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.leap.domain.Account;
 import org.leap.domain.Instrument;
-import org.leap.domain.Position;
+
 import org.leap.domain.enums.AccountStatus;
 import org.leap.domain.enums.InstrumentType;
 import org.leap.domain.enums.OrderSide;
 import org.leap.domain.enums.OrderStatus;
 import org.leap.exceptions.InsufficientFundsException;
-import org.mockito.InjectMocks;
+
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import com.leap.tradeapi.auth.CallerContext;
 import com.leap.tradeapi.controller.dto.OrderResponse;
 import com.leap.tradeapi.controller.dto.PlaceOrderRequest;
@@ -36,9 +36,18 @@ import com.leap.tradeapi.mapper.AccountMapper;
 import com.leap.tradeapi.mapper.InstrumentMapper;
 import com.leap.tradeapi.mapper.OrderMapper;
 import com.leap.tradeapi.mapper.PositionMapper;
-import com.leap.tradeapi.mapper.TradeMapper;
+
 import com.leap.tradeapi.mapper.row.NewOrder;
 import com.leap.tradeapi.mapper.row.OrderRow;
+
+import com.leap.tradeapi.messaging.OrderEventPublisher;
+
+/**
+ * Placement/cancellation happy paths not already covered rule-by-rule by
+ * {@code OrderServicePlacementTest} - notably that {@code cancelOrder} is
+ * untouched by SEC4-613 (it never priced or filled, so the async-publish
+ * change has nothing to do with it).
+ */
 
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {
@@ -47,7 +56,7 @@ class OrderServiceTest {
     @Mock private InstrumentMapper instrumentMapper;
     @Mock private PositionMapper positionMapper;
     @Mock private OrderMapper orderMapper;
-    @Mock private TradeMapper tradeMapper;
+    @Mock private OrderEventPublisher orderEventPublisher;
 
     private OrderService orderService;
     private final CallerContext caller = new CallerContext();
@@ -56,7 +65,7 @@ class OrderServiceTest {
     void setUp() {
         caller.setAccountId(1L);
         orderService = new OrderService(accountMapper, instrumentMapper, positionMapper,
-                orderMapper, tradeMapper, new AccountAccessGuard(caller));
+                orderMapper,  new AccountAccessGuard(caller),orderEventPublisher);
     }
 
     private Account account(String balance, long version) {
@@ -75,24 +84,27 @@ class OrderServiceTest {
     }
 
     @Test
-    void place_order_commits_cash_and_position_together() {
-        when(accountMapper.findDomainById(1L)).thenReturn(account("25000.00", 0));
-        when(instrumentMapper.findTradableByTicker("ACME")).thenReturn(acme());
-        when(positionMapper.findDomain(1L, 10L)).thenReturn(null);
-        when(orderMapper.insert(any(NewOrder.class))).thenAnswer(inv -> {
-            inv.getArgument(0, NewOrder.class).setOrderId(55L);
-            return 1;
-        });
-        when(accountMapper.updateBalanceWithVersion(eq(1L), any(BigDecimal.class), eq(0L))).thenReturn(1);
+    void place_order_writes_the_order_at_NEW_without_moving_cash_or_position() {
+        // Runs inside an active transaction: publishOrderPlaced registers a
+        // synchronization, which requires synchronization to be active.
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            when(accountMapper.findDomainById(1L)).thenReturn(account("25000.00", 0));
+            when(instrumentMapper.findTradableByTicker("ACME")).thenReturn(acme());
+            when(positionMapper.findDomain(1L, 10L)).thenReturn(null);
+            when(orderMapper.insert(any(NewOrder.class))).thenAnswer(inv -> {
+                inv.getArgument(0, NewOrder.class).setOrderId(55L);
+                return 1;
+            });
 
-        OrderResponse response = orderService.placeOrder(buy(100, "25.50"));
+            OrderResponse response = orderService.placeOrder(buy(100, "25.50"));
 
-        assertThat(response.status()).isEqualTo(OrderStatus.FILLED);
-        // cash moved: 25000 - (100 * 25.50) = 22450
-        verify(accountMapper).updateBalanceWithVersion(1L, new BigDecimal("22450.00"), 0L);
-        // position opened and the trade written against the generated order key
-        verify(positionMapper).insertPosition(eq(1L), eq(10L), any(BigDecimal.class), any(BigDecimal.class));
-        verify(tradeMapper).insert(eq(55L), eq(new BigDecimal("25.50")), any(BigDecimal.class), any());
+            assertThat(response.status()).isEqualTo(OrderStatus.NEW);
+            verify(positionMapper, never()).insertPosition(anyLong(), anyLong(), any(), any());
+            verify(positionMapper, never()).updatePosition(anyLong(), anyLong(), any(), any());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test
@@ -105,29 +117,10 @@ class OrderServiceTest {
                 .isInstanceOf(InsufficientFundsException.class);
 
         verify(orderMapper, never()).insert(any());
-        verify(accountMapper, never()).updateBalanceWithVersion(anyLong(), any(), anyLong());
-        verify(positionMapper, never()).insertPosition(anyLong(), anyLong(), any(), any());
-        verify(tradeMapper, never()).insert(anyLong(), any(), any(), any());
+        
     }
 
-    @Test
-    void a_concurrent_update_is_detected_and_the_second_writer_is_refused() {
-        when(accountMapper.findDomainById(1L)).thenReturn(account("25000.00", 3));
-        when(instrumentMapper.findTradableByTicker("ACME")).thenReturn(acme());
-        when(positionMapper.findDomain(1L, 10L)).thenReturn(null);
-        when(orderMapper.insert(any(NewOrder.class))).thenAnswer(inv -> {
-            inv.getArgument(0, NewOrder.class).setOrderId(55L);
-            return 1;
-        });
-        // the version moved under us: zero rows affected
-        when(accountMapper.updateBalanceWithVersion(eq(1L), any(BigDecimal.class), eq(3L))).thenReturn(0);
-
-        assertThatThrownBy(() -> orderService.placeOrder(buy(100, "25.50")))
-                .isInstanceOf(ConcurrentUpdateException.class);
-
-        verify(tradeMapper, never()).insert(anyLong(), any(), any(), any());
-    }
-
+    
     @Test
     void cancelling_a_filled_order_returns_ORD_409() {
         OrderRow filled = new OrderRow(55L, UUID.randomUUID().toString(), 1L, "ACME",

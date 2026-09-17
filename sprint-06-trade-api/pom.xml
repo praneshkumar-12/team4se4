@@ -47,6 +47,12 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- Kafka producer: SEC4-613 publishes ORDER_PLACED to the orders topic -->
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
+
         <!-- Bean Validation on request DTOs -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

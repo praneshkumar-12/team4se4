@@ -107,22 +107,28 @@ class TradeApiIntegrationTest {
     // ---- Order placement --------------------------------------------
 
     @Test
-    void placing_a_buy_fills_it_and_moves_the_cash() throws Exception {
+    void placing_a_buy_accepts_it_at_NEW_without_moving_cash_or_position() throws Exception {
         mvc.perform(post("/api/v1/orders")
                         .header(HttpHeaders.AUTHORIZATION, tokenFor(1L))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(orderBody("ACME", "BUY", 100, "25.50", "buy-key-001")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("FILLED"))
+                .andExpect(jsonPath("$.status").value("NEW"))
+                .andExpect(jsonPath("$.message").value("Order accepted"))
                 .andExpect(jsonPath("$.orderId").value(org.hamcrest.Matchers.startsWith("ORD-")));
 
+        // Acceptance no longer moves cash or the position: pricing and
+        // settlement happen later, in the Trade Executor (a teammate's ticket).
         mvc.perform(get("/api/v1/accounts/1/balance").header(HttpHeaders.AUTHORIZATION, tokenFor(1L)))
-                .andExpect(jsonPath("$.cashBalance").value(22450.00));
+                .andExpect(jsonPath("$.cashBalance").value(25000.00));
+
+        mvc.perform(get("/api/v1/accounts/1/positions").header(HttpHeaders.AUTHORIZATION, tokenFor(1L)))
+                .andExpect(jsonPath("$[0].quantity").value(40));
 
         mvc.perform(get("/api/v1/accounts/1/orders").header(HttpHeaders.AUTHORIZATION, tokenFor(1L)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
-                .andExpect(jsonPath("$[0].status").value("FILLED"))
+                .andExpect(jsonPath("$[0].status").value("NEW"))
                 .andExpect(jsonPath("$[0].symbol").value("ACME"));
     }
 
