@@ -1,0 +1,26 @@
+[project]
+name = "analytics-etl"
+version = "0.1.0"
+description = "Incremental ETL from the Postgres operational schema into the DuckDB FACT_TRADES star schema."
+requires-python = ">=3.11"
+dependencies = [
+    "duckdb>=0.10",
+    "psycopg2-binary>=2.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+etl = "etl.cli:main"
+
+[build-system]
+# >=83.0.0: floor clears the setuptools CVEs pip-audit flags below that
+# (PYSEC-2022-43012, PYSEC-2025-49, PYSEC-2026-1918, PYSEC-2026-3447).
+requires = ["setuptools>=83.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

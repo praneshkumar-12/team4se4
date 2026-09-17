@@ -49,5 +49,27 @@ services:
       retries: 5
       start_period: 40s
 
+  # SonarQube quality gate (Sprint 7, SEC4-620). Independent of the other
+  # services — only used locally to run `mvn sonar:sonar` / the Python
+  # scanner image against. Added as its own block to keep this additive and
+  # merge-friendly alongside the other members' service additions.
+  sonarqube:
+    image: sonarqube:community
+    ports:
+      - "9000:9000"
+    volumes:
+      - sonarqube-data:/opt/sonarqube/data
+      - sonarqube-extensions:/opt/sonarqube/extensions
+      - sonarqube-logs:/opt/sonarqube/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/api/system/status | grep -q '\"status\":\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
 volumes:
   postgres-data:
+  sonarqube-data:
+  sonarqube-extensions:
+  sonarqube-logs:
