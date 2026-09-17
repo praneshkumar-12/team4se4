@@ -10,7 +10,7 @@
     <artifactId>executor</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <name>executor</name>
-    <description>Sprint 7 Trade Executor: consumes ORDER_PLACED, prices against a live Fauxnance quote, and decides fill or reject.</description>
+    <description>Sprint 7 Trade Executor: Kafka consumer with retry/dead-letter handling, fill rules, settlement, and a market-data poller</description>
 
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
@@ -25,7 +25,7 @@
         <domain.artifactId>sprint-05-domain</domain.artifactId>
         <domain.version>1.0-SNAPSHOT</domain.version>
 
-        <kafka-clients.version>3.7.0</kafka-clients.version>
+        <kafka-clients.version>3.7.1</kafka-clients.version>
         <jackson.version>2.18.3</jackson.version>
         <postgresql.version>42.7.11</postgresql.version>
         <junit.version>5.13.4</junit.version>
@@ -38,7 +38,7 @@
 
     <dependencies>
 
-        <!-- Sprint 5 trading rules and pricing types, resolved from the local Maven repository -->
+        <!-- Sprint 5 shared domain/events/pricing types, resolved from the local Maven repository -->
         <dependency>
             <groupId>${domain.groupId}</groupId>
             <artifactId>${domain.artifactId}</artifactId>
@@ -66,11 +66,18 @@
             <version>${jackson.version}</version>
         </dependency>
 
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+
         <!-- Postgres JDBC driver for the plain-JDBC repositories -->
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <version>${postgresql.version}</version>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- ================= Test scope ================= -->
@@ -89,7 +96,7 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- In-memory database standing in for Postgres in the repository integration test -->
+        <!-- In-memory database standing in for Postgres in repository and market-data-poller tests -->
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
