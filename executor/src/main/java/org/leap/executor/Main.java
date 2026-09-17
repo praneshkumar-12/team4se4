@@ -29,8 +29,8 @@ import org.leap.executor.kafka.ResilientRecordProcessor;
 import org.leap.executor.kafka.TradeEventPublisher;
 import org.leap.executor.poller.MarketDataPoller;
 import org.leap.executor.poller.WatchedSymbolsRepository;
+import org.leap.executor.db.DriverManagerDataSource;
 import org.leap.pricing.Quote;
-import org.postgresql.ds.PGSimpleDataSource;
 
 import javax.sql.DataSource;
 import java.sql.DriverManager;
@@ -123,11 +123,7 @@ public final class Main {
     }
 
     private static DataSource jdbcDataSource() {
-        PGSimpleDataSource dataSource = new PGSimpleDataSource();
-        dataSource.setUrl(requireEnv("DB_URL"));
-        dataSource.setUser(requireEnv("DB_USER"));
-        dataSource.setPassword(requireEnv("DB_PASSWORD"));
-        return dataSource;
+        return new DriverManagerDataSource(requireEnv("DB_URL"), requireEnv("DB_USER"), requireEnv("DB_PASSWORD"));
     }
 
     private static String requireEnv(String name) {
