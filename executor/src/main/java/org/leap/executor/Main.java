@@ -8,20 +8,31 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.leap.events.Topics;
+import org.leap.executor.db.AccountRepository;
 import org.leap.executor.db.ConnectionFactory;
+import org.leap.executor.db.InstrumentRepository;
 import org.leap.executor.db.JdbcOrderExistenceChecker;
+import org.leap.executor.db.OrderRepository;
+import org.leap.executor.exec.ExecutionService;
+import org.leap.executor.exec.JdbcSettlementService;
 import org.leap.executor.exec.RetryPolicy;
+import org.leap.executor.exec.SettlementService;
 import org.leap.executor.fauxnance.FauxnanceClient;
 import org.leap.executor.kafka.DeadLetterPublisher;
+import org.leap.executor.kafka.ExecutionServiceOrderProcessor;
 import org.leap.executor.kafka.KafkaDeadLetterPublisher;
+import org.leap.executor.kafka.KafkaTradeEventPublisher;
 import org.leap.executor.kafka.OrderEventConsumer;
 import org.leap.executor.kafka.OrderExistenceChecker;
 import org.leap.executor.kafka.OrderProcessor;
 import org.leap.executor.kafka.ResilientRecordProcessor;
+import org.leap.executor.kafka.TradeEventPublisher;
 import org.leap.executor.poller.MarketDataPoller;
 import org.leap.executor.poller.WatchedSymbolsRepository;
 import org.leap.pricing.Quote;
+import org.postgresql.ds.PGSimpleDataSource;
 
+import javax.sql.DataSource;
 import java.sql.DriverManager;
 import java.util.List;
 import java.util.Map;
@@ -48,7 +59,18 @@ public final class Main {
         DeadLetterPublisher deadLetterPublisher = new KafkaDeadLetterPublisher(producer);
         RetryPolicy retryPolicy = new RetryPolicy(deadLetterPublisher);
         OrderExistenceChecker orderExistenceChecker = new JdbcOrderExistenceChecker(connectionFactory);
-        OrderProcessor orderProcessor = envelope -> { };
+
+        DataSource dataSource = jdbcDataSource();
+        TradeEventPublisher tradeEventPublisher = new KafkaTradeEventPublisher(requireEnv("KAFKA_BOOTSTRAP_SERVERS"));
+        SettlementService settlementService = new JdbcSettlementService(dataSource, tradeEventPublisher);
+        FauxnanceClient fauxnanceClient = new UnwiredFauxnanceClient();
+        ExecutionService executionService = new ExecutionService(
+                new OrderRepository(connectionFactory),
+                new InstrumentRepository(connectionFactory),
+                new AccountRepository(connectionFactory),
+                fauxnanceClient,
+                settlementService);
+        OrderProcessor orderProcessor = new ExecutionServiceOrderProcessor(executionService);
 
         ResilientRecordProcessor recordProcessor = new ResilientRecordProcessor(
                 objectMapper, orderExistenceChecker, orderProcessor, retryPolicy, deadLetterPublisher,
@@ -60,7 +82,6 @@ public final class Main {
         consumerThread.start();
 
         WatchedSymbolsRepository watchedSymbolsRepository = new WatchedSymbolsRepository(connectionFactory);
-        FauxnanceClient fauxnanceClient = new UnwiredFauxnanceClient();
         long configuredPollIntervalSeconds = envLong("POLL_INTERVAL_SECONDS", MarketDataPoller.MIN_POLL_INTERVAL_SECONDS);
         ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
         MarketDataPoller poller = new MarketDataPoller(watchedSymbolsRepository, fauxnanceClient, producer,
@@ -90,6 +111,7 @@ public final class Main {
                 org.apache.kafka.common.serialization.StringDeserializer.class.getName());
         props.put(org.apache.kafka.clients.consumer.ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
                 org.apache.kafka.common.serialization.ByteArrayDeserializer.class.getName());
+        props.put(org.apache.kafka.clients.consumer.ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
         return props;
     }
 
@@ -98,6 +120,14 @@ public final class Main {
         String user = requireEnv("DB_USER");
         String password = requireEnv("DB_PASSWORD");
         return () -> DriverManager.getConnection(url, user, password);
+    }
+
+    private static DataSource jdbcDataSource() {
+        PGSimpleDataSource dataSource = new PGSimpleDataSource();
+        dataSource.setUrl(requireEnv("DB_URL"));
+        dataSource.setUser(requireEnv("DB_USER"));
+        dataSource.setPassword(requireEnv("DB_PASSWORD"));
+        return dataSource;
     }
 
     private static String requireEnv(String name) {

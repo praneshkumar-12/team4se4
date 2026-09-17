@@ -73,6 +73,21 @@
     </changeSet>
 
     <!--
+        Sprint 7 (SEC4-615) additive change: nowhere on the order records *why*
+        it was rejected. Nullable, populated only when status becomes REJECTED.
+    -->
+    <changeSet id="2026-09-16-01-orders-rejection-reason" author="team4">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="orders" columnName="rejection_reason"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="orders">
+            <column name="rejection_reason" type="VARCHAR(255)"/>
+        </addColumn>
+    </changeSet>
+
+    <!--
         Demo walkthrough data (Sprint 3 seed): three clients/accounts across the
         ACTIVE / SUSPENDED / CLOSED states, three instruments, and one order of
         every lifecycle state with a matching trade and holding.

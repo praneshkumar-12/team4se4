@@ -3,10 +3,13 @@ package org.leap.executor.kafka;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.TopicPartition;
 import org.leap.events.Topics;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 /**
@@ -35,6 +38,9 @@ public class OrderEventConsumer implements Runnable {
                 ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofMillis(500));
                 for (ConsumerRecord<String, byte[]> record : records) {
                     processor.process(record.topic(), record.key(), record.value());
+                    consumer.commitSync(Map.of(
+                            new TopicPartition(record.topic(), record.partition()),
+                            new OffsetAndMetadata(record.offset() + 1)));
                 }
             }
         } finally {
