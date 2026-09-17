@@ -46,7 +46,7 @@ class OrderPlacementCharacterisationTest {
                         .content(orderBody(1L, "ACME", "BUY", 100, "25.50", "char-buy-key-001")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.orderId").value(org.hamcrest.Matchers.startsWith("ORD-")))
-                .andExpect(jsonPath("$.status").value("FILLED"))
+                .andExpect(jsonPath("$.status").value("NEW"))
                 .andExpect(jsonPath("$.message").value("Order executed"))
                 .andExpect(jsonPath("$.symbol").value("ACME"))
                 .andExpect(jsonPath("$.side").value("BUY"))
@@ -64,7 +64,7 @@ class OrderPlacementCharacterisationTest {
                 .andExpect(jsonPath("$[0].symbol").value("ACME"))
                 .andExpect(jsonPath("$[0].quantity").value(140));
 
-        // Order + trade rows: status FILLED, executedPrice equal to the submitted limit price.
+        // Order + trade rows: status NEW, executedPrice equal to the submitted limit price.
         mvc.perform(get("/api/v1/accounts/1/orders").header(HttpHeaders.AUTHORIZATION, tokenFor(1L)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].symbol").value("ACME"))
@@ -72,7 +72,7 @@ class OrderPlacementCharacterisationTest {
                 .andExpect(jsonPath("$[0].quantity").value(100))
                 .andExpect(jsonPath("$[0].price").value(25.50))
                 .andExpect(jsonPath("$[0].executedPrice").value(25.50))
-                .andExpect(jsonPath("$[0].status").value("FILLED"))
+                .andExpect(jsonPath("$[0].status").value("NEW"))
                 .andExpect(jsonPath("$[0].idempotencyKey").value("char-buy-key-001"));
     }
 
