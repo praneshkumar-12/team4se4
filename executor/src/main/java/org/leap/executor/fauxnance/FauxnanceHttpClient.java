@@ -190,7 +190,9 @@ public class FauxnanceHttpClient implements FauxnanceClient {
         }
 
         log.log(Level.WARNING, "Fauxnance exhausted {0} attempts for {1}", new Object[]{MAX_ATTEMPTS, uri});
-        throw lastFailure;
+        throw lastFailure != null
+                ? lastFailure
+                : new FauxnanceException("Fauxnance exhausted " + MAX_ATTEMPTS + " attempts for " + uri);
     }
 
     private void sleep(Duration duration) {

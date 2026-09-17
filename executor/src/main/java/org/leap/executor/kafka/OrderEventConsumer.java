@@ -36,11 +36,11 @@ public class OrderEventConsumer implements Runnable {
         try {
             while (running) {
                 ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofMillis(500));
-                for (ConsumerRecord<String, byte[]> record : records) {
-                    processor.process(record.topic(), record.key(), record.value());
+                for (ConsumerRecord<String, byte[]> consumerRecord : records) {
+                    processor.process(consumerRecord.topic(), consumerRecord.key(), consumerRecord.value());
                     consumer.commitSync(Map.of(
-                            new TopicPartition(record.topic(), record.partition()),
-                            new OffsetAndMetadata(record.offset() + 1)));
+                            new TopicPartition(consumerRecord.topic(), consumerRecord.partition()),
+                            new OffsetAndMetadata(consumerRecord.offset() + 1)));
                 }
             }
         } finally {

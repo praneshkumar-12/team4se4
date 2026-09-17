@@ -18,6 +18,7 @@ import org.leap.executor.exec.JdbcSettlementService;
 import org.leap.executor.exec.RetryPolicy;
 import org.leap.executor.exec.SettlementService;
 import org.leap.executor.fauxnance.FauxnanceClient;
+import org.leap.executor.fauxnance.FauxnanceHttpClient;
 import org.leap.executor.kafka.DeadLetterPublisher;
 import org.leap.executor.kafka.ExecutionServiceOrderProcessor;
 import org.leap.executor.kafka.KafkaDeadLetterPublisher;
@@ -30,24 +31,18 @@ import org.leap.executor.kafka.TradeEventPublisher;
 import org.leap.executor.poller.MarketDataPoller;
 import org.leap.executor.poller.WatchedSymbolsRepository;
 import org.leap.executor.db.DriverManagerDataSource;
-import org.leap.pricing.Quote;
 
 import javax.sql.DataSource;
 import java.sql.DriverManager;
-import java.util.List;
-import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
-/**
- * Starts the order consumer and the market-data poller in the same process.
- * SEC4-614/615 own the real order-processing and Fauxnance-client wiring;
- * the placeholders below exist only so this module runs end-to-end and are
- * expected to be replaced at merge time.
- */
+/** Starts the order consumer and the market-data poller in the same process. */
 public final class Main {
+
+    private static final String KAFKA_BOOTSTRAP_SERVERS_ENV = "KAFKA_BOOTSTRAP_SERVERS";
 
     private Main() {}
 
@@ -61,9 +56,9 @@ public final class Main {
         OrderExistenceChecker orderExistenceChecker = new JdbcOrderExistenceChecker(connectionFactory);
 
         DataSource dataSource = jdbcDataSource();
-        TradeEventPublisher tradeEventPublisher = new KafkaTradeEventPublisher(requireEnv("KAFKA_BOOTSTRAP_SERVERS"));
+        TradeEventPublisher tradeEventPublisher = new KafkaTradeEventPublisher(requireEnv(KAFKA_BOOTSTRAP_SERVERS_ENV));
         SettlementService settlementService = new JdbcSettlementService(dataSource, tradeEventPublisher);
-        FauxnanceClient fauxnanceClient = new UnwiredFauxnanceClient();
+        FauxnanceClient fauxnanceClient = new FauxnanceHttpClient();
         ExecutionService executionService = new ExecutionService(
                 new OrderRepository(connectionFactory),
                 new InstrumentRepository(connectionFactory),
@@ -97,7 +92,7 @@ public final class Main {
 
     private static Properties producerProps() {
         Properties props = new Properties();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, requireEnv("KAFKA_BOOTSTRAP_SERVERS"));
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, requireEnv(KAFKA_BOOTSTRAP_SERVERS_ENV));
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
         return props;
@@ -105,7 +100,7 @@ public final class Main {
 
     private static Properties consumerProps() {
         Properties props = new Properties();
-        props.put(org.apache.kafka.clients.consumer.ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, requireEnv("KAFKA_BOOTSTRAP_SERVERS"));
+        props.put(org.apache.kafka.clients.consumer.ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, requireEnv(KAFKA_BOOTSTRAP_SERVERS_ENV));
         props.put(org.apache.kafka.clients.consumer.ConsumerConfig.GROUP_ID_CONFIG, Topics.EXECUTOR_CONSUMER_GROUP);
         props.put(org.apache.kafka.clients.consumer.ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
                 org.apache.kafka.common.serialization.StringDeserializer.class.getName());
@@ -140,23 +135,5 @@ public final class Main {
             return defaultValue;
         }
         return Long.parseLong(value);
-    }
-
-    /** Replaced by SEC4-614's real Fauxnance HTTP client at merge time. */
-    private static final class UnwiredFauxnanceClient implements FauxnanceClient {
-        @Override
-        public Quote getQuote(String symbol) {
-            throw new UnsupportedOperationException("Fauxnance client not wired yet (see SEC4-614)");
-        }
-
-        @Override
-        public Map<String, Quote> getQuotes(List<String> symbols) {
-            throw new UnsupportedOperationException("Fauxnance client not wired yet (see SEC4-614)");
-        }
-
-        @Override
-        public int getRemainingDailyBudget() {
-            throw new UnsupportedOperationException("Fauxnance client not wired yet (see SEC4-614)");
-        }
     }
 }

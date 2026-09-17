@@ -45,23 +45,27 @@ public final class JdbcSettlementService implements SettlementService {
     public SettlementOutcome settle(long orderId, FillDecision decision) {
         try (Connection conn = dataSource.getConnection()) {
             conn.setAutoCommit(false);
-            try {
-                SettlementResult result = settleInTransaction(conn, orderId, decision);
-                if (result.outcome().applied()) {
-                    conn.commit();
-                    publish(orderId, result.accountId(), decision, result.outcome());
-                } else {
-                    conn.rollback();
-                }
-                return result.outcome();
-            } catch (RuntimeException | SQLException e) {
-                rollbackQuietly(conn);
-                throw (e instanceof SettlementFailedException sfe)
-                        ? sfe
-                        : new SettlementFailedException("Settlement failed for order " + orderId, e);
-            }
+            return settleGuarded(conn, orderId, decision);
         } catch (SQLException e) {
             throw new SettlementFailedException("Could not obtain a connection to settle order " + orderId, e);
+        }
+    }
+
+    private SettlementOutcome settleGuarded(Connection conn, long orderId, FillDecision decision) {
+        try {
+            SettlementResult result = settleInTransaction(conn, orderId, decision);
+            if (result.outcome().applied()) {
+                conn.commit();
+                publish(orderId, result.accountId(), decision, result.outcome());
+            } else {
+                conn.rollback();
+            }
+            return result.outcome();
+        } catch (RuntimeException | SQLException e) {
+            rollbackQuietly(conn);
+            throw (e instanceof SettlementFailedException sfe)
+                    ? sfe
+                    : new SettlementFailedException("Settlement failed for order " + orderId, e);
         }
     }
 
@@ -135,37 +139,36 @@ public final class JdbcSettlementService implements SettlementService {
     private void settleCashWithRetry(Connection conn, OrderSnapshot order, FillDecision decision) throws SQLException {
         BigDecimal notional = order.quantity().multiply(decision.executionPrice());
 
-        for (int attempt = 1; attempt <= MAX_OPTIMISTIC_LOCK_ATTEMPTS; attempt++) {
-            BigDecimal cashBalance;
-            long version;
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "SELECT cash_balance, version FROM accounts WHERE account_id = ?")) {
-                ps.setLong(1, order.accountId());
-                try (ResultSet rs = ps.executeQuery()) {
+        try (PreparedStatement selectPs = conn.prepareStatement(
+                     "SELECT cash_balance, version FROM accounts WHERE account_id = ?");
+             PreparedStatement updatePs = conn.prepareStatement(
+                     "UPDATE accounts SET cash_balance = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP "
+                             + "WHERE account_id = ? AND version = ?")) {
+
+            for (int attempt = 1; attempt <= MAX_OPTIMISTIC_LOCK_ATTEMPTS; attempt++) {
+                BigDecimal cashBalance;
+                long version;
+                selectPs.setLong(1, order.accountId());
+                try (ResultSet rs = selectPs.executeQuery()) {
                     if (!rs.next()) {
                         throw new SettlementFailedException("Account " + order.accountId() + " not found during settlement");
                     }
                     cashBalance = rs.getBigDecimal("cash_balance");
                     version = rs.getLong("version");
                 }
-            }
 
-            BigDecimal newBalance = order.side() == OrderSide.BUY
-                    ? cashBalance.subtract(notional)
-                    : cashBalance.add(notional);
+                BigDecimal newBalance = order.side() == OrderSide.BUY
+                        ? cashBalance.subtract(notional)
+                        : cashBalance.add(notional);
 
-            int updated;
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "UPDATE accounts SET cash_balance = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP "
-                            + "WHERE account_id = ? AND version = ?")) {
-                ps.setBigDecimal(1, newBalance);
-                ps.setLong(2, order.accountId());
-                ps.setLong(3, version);
-                updated = ps.executeUpdate();
-            }
+                updatePs.setBigDecimal(1, newBalance);
+                updatePs.setLong(2, order.accountId());
+                updatePs.setLong(3, version);
+                int updated = updatePs.executeUpdate();
 
-            if (updated > 0) {
-                return;
+                if (updated > 0) {
+                    return;
+                }
             }
         }
 

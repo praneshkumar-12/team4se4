@@ -25,8 +25,8 @@ public class KafkaDeadLetterPublisher implements DeadLetterPublisher {
     @Override
     public void sendToDlt(String originalTopic, String key, byte[] originalMessageValue, String failureReason) {
         String dltTopic = originalTopic.endsWith(DLT_SUFFIX) ? originalTopic : originalTopic + DLT_SUFFIX;
-        ProducerRecord<String, byte[]> record = new ProducerRecord<>(dltTopic, key, originalMessageValue);
-        record.headers().add(new RecordHeader(FAILURE_REASON_HEADER, failureReason.getBytes(StandardCharsets.UTF_8)));
-        producer.send(record);
+        ProducerRecord<String, byte[]> producerRecord = new ProducerRecord<>(dltTopic, key, originalMessageValue);
+        producerRecord.headers().add(new RecordHeader(FAILURE_REASON_HEADER, failureReason.getBytes(StandardCharsets.UTF_8)));
+        producer.send(producerRecord);
     }
 }

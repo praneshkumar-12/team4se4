@@ -41,6 +41,10 @@ public final class KafkaTradeEventPublisher implements TradeEventPublisher, Auto
         try {
             String json = mapper.writeValueAsString(envelope);
             producer.send(new ProducerRecord<>(topic, key, json)).get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "Interrupted publishing event " + envelope.eventId() + " to " + topic, e);
         } catch (Exception e) {
             throw new IllegalStateException(
                     "Failed to publish event " + envelope.eventId() + " to " + topic, e);

@@ -57,8 +57,9 @@ class RetryPolicyTest {
         RetryPolicy policy = new RetryPolicy(5, 1000L, dlt, sleeper);
 
         AtomicInteger attempts = new AtomicInteger();
+        byte[] payload = "payload".getBytes();
         org.junit.jupiter.api.Assertions.assertThrows(PoisonMessageException.class, () ->
-                policy.execute("orders", "acc-1", "payload".getBytes(), () -> {
+                policy.execute("orders", "acc-1", payload, () -> {
                     attempts.incrementAndGet();
                     throw new PoisonMessageException("malformed JSON");
                 }));

@@ -94,7 +94,7 @@ public class ExecutionService {
         try {
             quote = fauxnanceClient.getQuote(instrument.getTicker());
         } catch (FauxnanceException e) {
-            log.log(Level.WARNING, "NO_PRICE_AVAILABLE orderId=" + orderId + " symbol=" + instrument.getTicker(), e);
+            log.log(Level.WARNING, e, () -> "NO_PRICE_AVAILABLE orderId=" + orderId + " symbol=" + instrument.getTicker());
             settle(orderId, FillDecision.reject("NO_PRICE_AVAILABLE"));
             return;
         }
