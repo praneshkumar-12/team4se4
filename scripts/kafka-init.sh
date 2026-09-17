@@ -31,7 +31,7 @@ create_topic() {
     local retention_ms="$3"
 
     echo "Creating topic '${topic}' (partitions=${partitions}, retention.ms=${retention_ms})..."
-    ${COMPOSE} exec -T "${SERVICE}" kafka-topics.sh \
+    ${COMPOSE} exec -T "${SERVICE}" /opt/kafka/bin/kafka-topics.sh \
         --bootstrap-server "${BOOTSTRAP_SERVER}" \
         --create --if-not-exists \
         --topic "${topic}" \
@@ -51,4 +51,4 @@ create_topic "market-data"     6   86400000      # 1 day
 create_topic "market-data.DLT" 6   86400000
 
 echo "Done. Listing topics:"
-${COMPOSE} exec -T "${SERVICE}" kafka-topics.sh --bootstrap-server "${BOOTSTRAP_SERVER}" --list
+${COMPOSE} exec -T "${SERVICE}" /opt/kafka/bin/kafka-topics.sh --bootstrap-server "${BOOTSTRAP_SERVER}" --list
