@@ -75,10 +75,13 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       JWT_ISSUER: ${JWT_ISSUER:-auth-service}
       LIQUIBASE_CONTEXTS: ${LIQUIBASE_CONTEXTS:-}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:29092}
     ports:
       - "8085:8085"
     depends_on:
       postgres:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8085/actuator/health | grep -q '\"status\":\"UP\"'"]
