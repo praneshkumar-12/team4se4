@@ -39,7 +39,7 @@ class OrderPlacementCharacterisationTest {
 
     
     @Test
-    void an_affordable_buy_fills_synchronously_at_the_submitted_price() throws Exception {
+    void an_affordable_buy_is_accepted_at_NEW_without_a_synchronous_fill() throws Exception {
         mvc.perform(post("/api/v1/orders")
                         .header(HttpHeaders.AUTHORIZATION, tokenFor(1L))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -47,31 +47,33 @@ class OrderPlacementCharacterisationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.orderId").value(org.hamcrest.Matchers.startsWith("ORD-")))
                 .andExpect(jsonPath("$.status").value("NEW"))
-                .andExpect(jsonPath("$.message").value("Order executed"))
+                .andExpect(jsonPath("$.message").value("Order accepted"))
                 .andExpect(jsonPath("$.symbol").value("ACME"))
                 .andExpect(jsonPath("$.side").value("BUY"))
                 .andExpect(jsonPath("$.quantity").value(100))
                 .andExpect(jsonPath("$.price").value(25.50));
 
-        // Cash row: 25000.00 (seed) - (100 * 25.50) = 22450.00.
+        // Cash is untouched at acceptance (still the 25000.00 seed value): the
+        // fill, and the cash movement that comes with it, is the executor's
+        // job now (SEC4-614/615), not something that happens inside this request.
         mvc.perform(get("/api/v1/accounts/1/balance").header(HttpHeaders.AUTHORIZATION, tokenFor(1L)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.cashBalance").value(22450.00));
+                .andExpect(jsonPath("$.cashBalance").value(25000.00));
 
-        // Position row: 40 (seed) + 100 = 140 ACME, folded into a new average cost.
+        // Position is untouched at acceptance too: still the 40 ACME seed value.
         mvc.perform(get("/api/v1/accounts/1/positions").header(HttpHeaders.AUTHORIZATION, tokenFor(1L)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].symbol").value("ACME"))
-                .andExpect(jsonPath("$[0].quantity").value(140));
+                .andExpect(jsonPath("$[0].quantity").value(40));
 
-        // Order + trade rows: status NEW, executedPrice equal to the submitted limit price.
+        // Order row only: status NEW, no trade row exists yet so executedPrice is null.
         mvc.perform(get("/api/v1/accounts/1/orders").header(HttpHeaders.AUTHORIZATION, tokenFor(1L)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].symbol").value("ACME"))
                 .andExpect(jsonPath("$[0].side").value("BUY"))
                 .andExpect(jsonPath("$[0].quantity").value(100))
                 .andExpect(jsonPath("$[0].price").value(25.50))
-                .andExpect(jsonPath("$[0].executedPrice").value(25.50))
+                .andExpect(jsonPath("$[0].executedPrice").doesNotExist())
                 .andExpect(jsonPath("$[0].status").value("NEW"))
                 .andExpect(jsonPath("$[0].idempotencyKey").value("char-buy-key-001"));
     }
