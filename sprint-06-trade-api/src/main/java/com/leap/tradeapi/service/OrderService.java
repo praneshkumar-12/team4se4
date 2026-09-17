@@ -23,16 +23,16 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.leap.tradeapi.controller.dto.OrderResponse;
 import com.leap.tradeapi.controller.dto.PlaceOrderRequest;
-import com.leap.tradeapi.error.ConcurrentUpdateException;
 import com.leap.tradeapi.error.OrderNotCancellableException;
 import com.leap.tradeapi.error.OrderNotFoundException;
 import com.leap.tradeapi.mapper.AccountMapper;
 import com.leap.tradeapi.mapper.InstrumentMapper;
 import com.leap.tradeapi.mapper.OrderMapper;
 import com.leap.tradeapi.mapper.PositionMapper;
-import com.leap.tradeapi.mapper.TradeMapper;
 import com.leap.tradeapi.mapper.row.NewOrder;
 import com.leap.tradeapi.mapper.row.OrderRow;
+import com.leap.tradeapi.messaging.OrderEventPublisher;
+import com.leap.tradeapi.messaging.OrderPlacedPayload;
 
 /**
  * Order placement and cancellation. This class decides nothing about whether a
@@ -49,24 +49,27 @@ public class OrderService {
     private final InstrumentMapper instrumentMapper;
     private final PositionMapper positionMapper;
     private final OrderMapper orderMapper;
-    private final TradeMapper tradeMapper;
     private final AccountAccessGuard guard;
+    private final OrderEventPublisher orderEventPublisher;
 
     public OrderService(AccountMapper accountMapper, InstrumentMapper instrumentMapper,
                         PositionMapper positionMapper, OrderMapper orderMapper,
-                        TradeMapper tradeMapper, AccountAccessGuard guard) {
+                        AccountAccessGuard guard, OrderEventPublisher orderEventPublisher) {
         this.accountMapper = accountMapper;
         this.instrumentMapper = instrumentMapper;
         this.positionMapper = positionMapper;
         this.orderMapper = orderMapper;
-        this.tradeMapper = tradeMapper;
         this.guard = guard;
+        this.orderEventPublisher = orderEventPublisher;
     }
 
     /**
-     * Validates against rules 1 to 8, fills synchronously, and writes the order,
-     * the trade, the cash movement and the position in one transaction: they
-     * move together or none of them moves.
+     * Validates against rules 1 to 8 and writes the order at {@code NEW}. No
+     * cash movement, no position movement, no fill: pricing and settlement now
+     * happen later, in the Trade Executor, once it has read a market quote for
+     * this order off the {@code orders} topic. On success, publishes
+     * {@code ORDER_PLACED} once this method's transaction has committed - see
+     * {@link OrderEventPublisher}.
      */
     @Transactional
     public OrderResponse placeOrder(PlaceOrderRequest request) {
@@ -86,14 +89,12 @@ public class OrderService {
         accounts.put(accountId, account);
         Map<String, Instrument> instruments = new HashMap<>();
         Map<String, Position> positions = new HashMap<>();
-        boolean positionExisted = false;
 
         if (instrument != null) {
             instruments.put(request.symbol(), instrument);
             Position existing = positionMapper.findDomain(accountId, instrument.getInstrumentId());
             if (existing != null) {
                 positions.put(positionKey(accountId, request.symbol()), existing);
-                positionExisted = true;
             }
         }
 
@@ -106,20 +107,20 @@ public class OrderService {
                 request.price(),
                 request.idempotencyKey());
 
-        Order filled = domain.placeOrder(domainRequest);
+        Order accepted = domain.acceptOrder(domainRequest);
 
-        // Persist the resulting state.
+        // Persist the order at NEW.
         String publicId = UUID.randomUUID().toString();
         NewOrder newOrder = new NewOrder(
                 publicId,
                 request.idempotencyKey(),
                 accountId,
                 instrument.getInstrumentId(),
-                filled.getSide().name(),
-                filled.getOrderType().name(),
-                filled.getQuantity(),
-                filled.getLimitPrice(),
-                filled.getStatus().name());
+                accepted.getSide().name(),
+                accepted.getOrderType().name(),
+                accepted.getQuantity(),
+                accepted.getLimitPrice(),
+                accepted.getStatus().name());
 
         try {
             orderMapper.insert(newOrder);
@@ -127,31 +128,23 @@ public class OrderService {
             throw new DuplicateOrderException(request.idempotencyKey());
         }
 
-        int updated = accountMapper.updateBalanceWithVersion(
-                accountId, account.getCashBalance(), account.getVersion());
-        if (updated == 0) {
-            // A concurrent writer moved the version between our read and our write.
-            throw new ConcurrentUpdateException();
-        }
+        Instant createdOn = Instant.now();
+        orderEventPublisher.publishOrderPlaced(new OrderPlacedPayload(
+                publicId,
+                accountId,
+                request.symbol(),
+                accepted.getSide().name(),
+                request.quantity(),
+                accepted.getLimitPrice(),
+                request.idempotencyKey(),
+                createdOn));
 
-        Position finalPosition = positions.get(positionKey(accountId, request.symbol()));
-        if (positionExisted) {
-            positionMapper.updatePosition(accountId, instrument.getInstrumentId(),
-                    finalPosition.getQuantity(), finalPosition.getAverageCost());
-        } else {
-            positionMapper.insertPosition(accountId, instrument.getInstrumentId(),
-                    finalPosition.getQuantity(), finalPosition.getAverageCost());
-        }
+        log.info("Order {} accepted: account={} {} {} qty={} price={}",
+                publicId, accountId, accepted.getSide(), request.symbol(),
+                accepted.getQuantity(), accepted.getLimitPrice());
 
-        tradeMapper.insert(newOrder.getOrderId(), filled.getLimitPrice(),
-                filled.getQuantity(), Instant.now());
-
-        log.info("Order {} filled: account={} {} {} qty={} price={}",
-                publicId, accountId, filled.getSide(), request.symbol(),
-                filled.getQuantity(), filled.getLimitPrice());
-
-        return new OrderResponse("ORD-" + publicId, filled.getStatus(), "Order executed",
-                request.symbol(), filled.getSide(), request.quantity(), filled.getLimitPrice());
+        return new OrderResponse("ORD-" + publicId, accepted.getStatus(), "Order accepted",
+                request.symbol(), accepted.getSide(), request.quantity(), accepted.getLimitPrice());
     }
 
     /**
