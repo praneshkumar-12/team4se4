@@ -7,6 +7,9 @@ import java.util.Map;
 
 public interface FauxnanceClient {
     Quote getQuote(String symbol);
-    Map<String, Quote> getQuotes(List<String> symbols); // chunks internally to <=25/request, used later by a teammate's poller
+
+    /** Internally chunks to <=25 symbols/request. */
+    Map<String, Quote> getQuotes(List<String> symbols);
+
     int getRemainingDailyBudget();
 }

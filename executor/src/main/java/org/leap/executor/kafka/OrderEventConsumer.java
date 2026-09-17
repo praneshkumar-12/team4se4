@@ -1,17 +1,11 @@
 package org.leap.executor.kafka;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.serialization.StringDeserializer;
-import org.leap.events.EventEnvelope;
 import org.leap.events.Topics;
-import org.leap.executor.exec.ExecutionService;
 
 import java.time.Duration;
 import java.util.List;
@@ -22,57 +16,43 @@ import java.util.logging.Logger;
 
 /**
  * Raw {@code kafka-clients} consumer for {@link Topics#ORDERS} — no Spring
- * Kafka, matching this sprint's teaching idiom. {@code enable.auto.commit} is
- * off: a record's offset is committed only once {@link ExecutionService} has
- * fully handled it, so a crash mid-processing replays that message rather
- * than losing it (the duplicate-delivery check in {@code ExecutionService}
- * is what makes that replay safe).
+ * Kafka, matching this sprint's teaching idiom. Each record's raw bytes are
+ * handed to a {@link ResilientRecordProcessor}, which classifies and
+ * resolves every failure itself (poison -> dead-letter immediately,
+ * transient -> retry with backoff, then dead-letter once the budget is
+ * spent) and always returns normally once a record is fully resolved,
+ * whether that resolution was a real settlement or a dead-letter.
  *
- * <p>Retry/dead-letter handling is explicitly out of scope for this ticket
- * (a teammate's SEC4-617/618 build that around this loop): on any unhandled
- * exception, this loop logs and moves on to the next record without
- * committing the failed one's offset, rather than crashing.
+ * <p>{@code enable.auto.commit} must be off in the {@link Properties} this
+ * is constructed with: a record's offset is committed here, manually, only
+ * once {@link ResilientRecordProcessor#process} has returned normally, so a
+ * crash mid-processing replays that message rather than losing it (the
+ * duplicate-delivery check in {@code ExecutionService} is what makes that
+ * replay safe). If {@code process} lets an exception escape — something
+ * neither classified as poison nor transient, i.e. a genuine bug — this
+ * loop logs it and does not commit, rather than losing the record or
+ * crashing the consumer thread.
  */
-public class OrderEventConsumer implements AutoCloseable {
+public class OrderEventConsumer implements Runnable {
 
     private static final Logger log = Logger.getLogger(OrderEventConsumer.class.getName());
-    private static final TypeReference<EventEnvelope<OrderPlacedPayload>> ORDER_PLACED_ENVELOPE =
-            new TypeReference<>() {
-            };
 
-    private final KafkaConsumer<String, String> consumer;
-    private final ExecutionService executionService;
-    private final ObjectMapper mapper;
+    private final KafkaConsumer<String, byte[]> consumer;
+    private final ResilientRecordProcessor processor;
     private volatile boolean running = true;
 
-    public OrderEventConsumer(String bootstrapServers, ExecutionService executionService) {
-        this(buildConsumer(bootstrapServers), executionService, new ObjectMapper());
+    public OrderEventConsumer(Properties consumerProps, ResilientRecordProcessor processor) {
+        this.consumer = new KafkaConsumer<>(consumerProps);
+        this.consumer.subscribe(List.of(Topics.ORDERS));
+        this.processor = processor;
     }
 
-    OrderEventConsumer(KafkaConsumer<String, String> consumer, ExecutionService executionService, ObjectMapper mapper) {
-        this.consumer = consumer;
-        this.executionService = executionService;
-        this.mapper = mapper;
-    }
-
-    private static KafkaConsumer<String, String> buildConsumer(String bootstrapServers) {
-        Properties props = new Properties();
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        props.put(ConsumerConfig.GROUP_ID_CONFIG, Topics.EXECUTOR_CONSUMER_GROUP);
-        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
-        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        return new KafkaConsumer<>(props);
-    }
-
-    /** Blocks, polling {@link Topics#ORDERS} until {@link #close()} is called. */
+    @Override
     public void run() {
-        consumer.subscribe(List.of(Topics.ORDERS));
         try {
             while (running) {
-                ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(1));
-                for (ConsumerRecord<String, String> record : records) {
+                ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofMillis(500));
+                for (ConsumerRecord<String, byte[]> record : records) {
                     if (handle(record)) {
                         commit(record);
                     }
@@ -83,30 +63,24 @@ public class OrderEventConsumer implements AutoCloseable {
         }
     }
 
-    /** @return true if the record was fully handled and its offset should be committed. */
-    private boolean handle(ConsumerRecord<String, String> record) {
+    /** @return true if the record was fully resolved (settled or dead-lettered) and its offset should be committed. */
+    private boolean handle(ConsumerRecord<String, byte[]> record) {
         try {
-            EventEnvelope<OrderPlacedPayload> envelope = mapper.readValue(record.value(), ORDER_PLACED_ENVELOPE);
-            executionService.execute(envelope.payload().orderId());
+            processor.process(record.topic(), record.key(), record.value());
             return true;
-        } catch (Exception e) {
-            log.log(Level.SEVERE, "Skipping record at offset " + record.offset()
-                    + " on partition " + record.partition() + " without committing", e);
+        } catch (RuntimeException e) {
+            log.log(Level.SEVERE, "Unexpected failure processing record at offset " + record.offset()
+                    + " on partition " + record.partition() + " — not committing, will be redelivered", e);
             return false;
         }
     }
 
-    private void commit(ConsumerRecord<String, String> record) {
+    private void commit(ConsumerRecord<String, byte[]> record) {
         TopicPartition partition = new TopicPartition(record.topic(), record.partition());
         consumer.commitSync(Map.of(partition, new OffsetAndMetadata(record.offset() + 1)));
     }
 
-    @Override
-    public void close() {
+    public void stop() {
         running = false;
-    }
-
-    /** The ORDER_PLACED event payload: just enough to look the order up. */
-    public record OrderPlacedPayload(long orderId) {
     }
 }
