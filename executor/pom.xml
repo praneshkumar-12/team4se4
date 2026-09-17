@@ -45,6 +45,13 @@
             <version>${domain.version}</version>
         </dependency>
 
+        <!-- Logging -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.16</version>
+        </dependency>
+
         <!-- Raw Kafka client: no Spring Kafka, matching this sprint's teaching idiom -->
         <dependency>
             <groupId>org.apache.kafka</groupId>

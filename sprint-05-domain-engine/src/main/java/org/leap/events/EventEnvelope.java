@@ -12,6 +12,13 @@ public record EventEnvelope<T>(
         T payload
 ) {
     public static <T> EventEnvelope<T> of(String eventType, String source, T payload) {
-        return new EventEnvelope<>(UUID.randomUUID().toString(), eventType, Instant.now(), source, 1, payload);
+        return new EventEnvelope<>(
+                UUID.randomUUID().toString(),
+                eventType,
+                Instant.now(),
+                source,
+                1,
+                payload
+        );
     }
 }
