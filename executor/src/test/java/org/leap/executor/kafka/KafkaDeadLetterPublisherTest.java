@@ -24,11 +24,11 @@ class KafkaDeadLetterPublisherTest {
 
         List<ProducerRecord<String, byte[]>> sent = mockProducer.history();
         assertEquals(1, sent.size());
-        ProducerRecord<String, byte[]> record = sent.get(0);
-        assertEquals("orders.DLT", record.topic());
-        assertEquals("acc-1", record.key());
-        assertArrayEquals(originalValue, record.value());
+        ProducerRecord<String, byte[]> producerRecord = sent.get(0);
+        assertEquals("orders.DLT", producerRecord.topic());
+        assertEquals("acc-1", producerRecord.key());
+        assertArrayEquals(originalValue, producerRecord.value());
         assertArrayEquals("Missing order identifier".getBytes(StandardCharsets.UTF_8),
-                record.headers().lastHeader(KafkaDeadLetterPublisher.FAILURE_REASON_HEADER).value());
+                producerRecord.headers().lastHeader(KafkaDeadLetterPublisher.FAILURE_REASON_HEADER).value());
     }
 }

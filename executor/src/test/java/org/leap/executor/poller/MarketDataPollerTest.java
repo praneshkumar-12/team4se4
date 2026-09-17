@@ -88,8 +88,8 @@ class MarketDataPollerTest {
         List<ProducerRecord<String, byte[]>> sent = producer.history();
         assertEquals(2, sent.size());
         assertEquals(Set.of("SYM0", "SYM1"), Set.of(sent.get(0).key(), sent.get(1).key()));
-        for (ProducerRecord<String, byte[]> record : sent) {
-            assertEquals("market-data", record.topic());
+        for (ProducerRecord<String, byte[]> producerRecord : sent) {
+            assertEquals("market-data", producerRecord.topic());
         }
     }
 

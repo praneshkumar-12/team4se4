@@ -132,7 +132,7 @@ public class OrderService {
 
         Instant createdOn = Instant.now();
         orderEventPublisher.publishOrderPlaced(new OrderPlacedPayload(
-                publicId,
+                String.valueOf(newOrder.getOrderId()),
                 accountId,
                 request.symbol(),
                 accepted.getSide().name(),

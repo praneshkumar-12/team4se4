@@ -18,8 +18,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -99,7 +99,7 @@ class DeadLetterClassificationTest {
     void lockBudgetExhaustionIsRetriedThenDeadLetteredOnceBudgetIsSpent() throws OrderLookupException {
         byte[] message = validMessage(7L);
         when(orderExistenceChecker.exists(7L)).thenReturn(true);
-        org.mockito.Mockito.doThrow(new TransientProcessingException("optimistic lock budget exhausted"))
+        doThrow(new TransientProcessingException("optimistic lock budget exhausted"))
                 .when(orderProcessor).process(any());
 
         processor.process("orders", "acc-1", message);

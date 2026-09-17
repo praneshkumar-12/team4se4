@@ -87,8 +87,8 @@ class SettlementServiceTest {
         when(connection.prepareStatement(contains("INSERT INTO trades"))).thenReturn(tradeInsert);
         when(tradeInsert.executeUpdate()).thenThrow(new SQLException("disk full"));
 
-        assertThrows(SettlementFailedException.class,
-                () -> service.settle(ORDER_ID, FillDecision.fillAt(new BigDecimal("10"))));
+        FillDecision decision = FillDecision.fillAt(new BigDecimal("10"));
+        assertThrows(SettlementFailedException.class, () -> service.settle(ORDER_ID, decision));
 
         verify(connection, never()).commit();
         verify(connection).rollback();
@@ -121,8 +121,8 @@ class SettlementServiceTest {
         // Every attempt loses the optimistic-lock race.
         when(accountUpdate.executeUpdate()).thenReturn(0);
 
-        assertThrows(SettlementFailedException.class,
-                () -> service.settle(ORDER_ID, FillDecision.fillAt(new BigDecimal("10"))));
+        FillDecision decision = FillDecision.fillAt(new BigDecimal("10"));
+        assertThrows(SettlementFailedException.class, () -> service.settle(ORDER_ID, decision));
 
         verify(accountUpdate, times(5)).executeUpdate();
         verify(connection, never()).commit();

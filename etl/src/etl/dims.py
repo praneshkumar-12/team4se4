@@ -50,43 +50,57 @@ def load_dim_date(con, start: date, end: date) -> int:
 
 def load_dim_instrument(con, rows: list[dict]) -> int:
     """Type-1 upsert keyed by symbol: attributes overwrite in place."""
-    existing = dict(con.execute("SELECT symbol, instrument_key FROM dim_instrument").fetchall())
+    existing = {
+        r[0]: r[1:]
+        for r in con.execute(
+            "SELECT symbol, instrument_key, name, asset_class, currency, exchange, tradable "
+            "FROM dim_instrument"
+        ).fetchall()
+    }
     next_key = next_surrogate_key(con, "dim_instrument", "instrument_key")
     now = datetime.utcnow()
 
-    upsert_rows = []
+    insert_rows = []
+    update_rows = []
     for row in rows:
         symbol = row["symbol"]
-        key = existing.get(symbol)
-        if key is None:
+        business_attributes = (
+            row["name"], row["asset_class"], row["currency"], row.get("exchange"), bool(row["tradable"]),
+        )
+        current = existing.get(symbol)
+        if current is None:
             key = next_key
             next_key += 1
-        upsert_rows.append((
-            key,
-            symbol,
-            row["name"],
-            row["asset_class"],
-            row["currency"],
-            row.get("exchange"),
-            bool(row["tradable"]),
-            now,
-        ))
+            insert_rows.append((key, symbol, *business_attributes, now))
+        elif current[1:] != business_attributes:
+            # A row already loaded may be referenced by fact_trades. DuckDB's FK
+            # check fires even on an UPDATE that leaves instrument_key alone, so
+            # this only runs for rows whose attributes actually changed - an
+            # unchanged reload (the common idempotent-rerun case) never touches
+            # an already-referenced row at all.
+            key = current[0]
+            update_rows.append((symbol, *business_attributes, now, key))
 
-    # dim_instrument has two UNIQUE constraints (instrument_key, symbol), so
-    # DuckDB's "INSERT OR REPLACE" can't infer a single conflict target.
-    # Delete-then-insert by the already-resolved key instead.
-    keys = [row[0] for row in upsert_rows]
-    if keys:
-        con.executemany("DELETE FROM dim_instrument WHERE instrument_key = ?", [(k,) for k in keys])
-    con.executemany(
-        """
-        INSERT INTO dim_instrument
-            (instrument_key, symbol, name, asset_class, currency, exchange, tradable, loaded_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        upsert_rows,
-    )
-    return len(upsert_rows)
+    if update_rows:
+        con.executemany(
+            """
+            UPDATE dim_instrument
+            SET symbol = ?, name = ?, asset_class = ?, currency = ?, exchange = ?,
+                tradable = ?, loaded_at = ?
+            WHERE instrument_key = ?
+            """,
+            update_rows,
+        )
+    if insert_rows:
+        con.executemany(
+            """
+            INSERT INTO dim_instrument
+                (instrument_key, symbol, name, asset_class, currency, exchange, tradable, loaded_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            insert_rows,
+        )
+    return len(insert_rows) + len(update_rows)
 
 
 def load_dim_account(con, rows: list[dict]) -> int:
