@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>org.leap</groupId>
+    <artifactId>executor</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <name>executor</name>
+    <description>Sprint 7 Trade Executor: consumes ORDER_PLACED, prices against a live Fauxnance quote, and decides fill or reject.</description>
+
+    <properties>
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!--
+            Sprint 5 domain/pricing coordinates. The module is built and installed
+            into the local Maven repository (mvn install in ../sprint-05-domain-engine)
+            before this project is built — the same pattern sprint-06-trade-api uses.
+        -->
+        <domain.groupId>org.leap</domain.groupId>
+        <domain.artifactId>sprint-05-domain</domain.artifactId>
+        <domain.version>1.0-SNAPSHOT</domain.version>
+
+        <kafka-clients.version>3.7.0</kafka-clients.version>
+        <jackson.version>2.18.3</jackson.version>
+        <postgresql.version>42.7.11</postgresql.version>
+        <junit.version>5.13.4</junit.version>
+        <mockito.version>5.14.2</mockito.version>
+        <h2.version>2.3.232</h2.version>
+
+        <maven.surefire.version>3.5.4</maven.surefire.version>
+        <maven.enforcer.version>3.6.2</maven.enforcer.version>
+    </properties>
+
+    <dependencies>
+
+        <!-- Sprint 5 trading rules and pricing types, resolved from the local Maven repository -->
+        <dependency>
+            <groupId>${domain.groupId}</groupId>
+            <artifactId>${domain.artifactId}</artifactId>
+            <version>${domain.version}</version>
+        </dependency>
+
+        <!-- Raw Kafka client: no Spring Kafka, matching this sprint's teaching idiom -->
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>${kafka-clients.version}</version>
+        </dependency>
+
+        <!-- JSON (de)serialization of EventEnvelope/OrderPlacedPayload and Fauxnance responses -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+
+        <!-- Postgres JDBC driver for the plain-JDBC repositories -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>${postgresql.version}</version>
+        </dependency>
+
+        <!-- ================= Test scope ================= -->
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <version>${mockito.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- In-memory database standing in for Postgres in the repository integration test -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>${h2.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${maven.surefire.version}</version>
+            </plugin>
+
+            <!-- Pins the build to Java 21 and Maven 3.9+, and fails fast if the
+                 Sprint 5 artefact is missing from the local repository. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>${maven.enforcer.version}</version>
+                <executions>
+                    <execution>
+                        <id>enforce-environment</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>[21,)</version>
+                                    <message>The executor requires Java 21 or newer.</message>
+                                </requireJavaVersion>
+                                <requireMavenVersion>
+                                    <version>[3.9,)</version>
+                                </requireMavenVersion>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
