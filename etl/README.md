@@ -95,8 +95,12 @@ and a `${DB_PASSWORD:postgres}` env-default, all outside this sprint's scope
 and, on inspection, apparent false positives (test-only placeholder values,
 not real credentials) — flagged for team review per SEC4-620's rule against
 unilaterally dismissing a finding, not fixed here since that module belongs
-to a different sprint's branch. The live SonarQube gate itself (Java
-`executor/` scan, dashboard pass/fail) has not been run: `executor/` doesn't
-exist on this branch yet (SEC4-614, a teammate's ticket), and this ticket is
-meant to run after the other members' branches are merged — see the ticket
-notes and `00-MASTER-PLAN-sprint7.md`.
+to a different sprint's branch. `executor/pom.xml` now has the
+`sonar-maven-plugin` wired in (`mvn sonar:sonar -Dsonar.token="$SONAR_TOKEN"`,
+against `sonar.host.url=http://localhost:9000`, `sonar.projectKey=trade-executor`
+— both overridable on the command line), but the live SonarQube gate itself
+(dashboard pass/fail, findings fixed) has still not been run: that needs
+Docker Desktop running locally and a manually-generated `SONAR_TOKEN`, which
+weren't available when this config was wired up. Run it and address whatever
+it reports before calling SEC4-620 done — see the ticket notes and
+`00-MASTER-PLAN-sprint7.md`.
