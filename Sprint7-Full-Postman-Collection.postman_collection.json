@@ -1,0 +1,444 @@
+{
+  "info": {
+    "_postman_id": "b7e1c9a0-4f2e-4c3a-9d1e-sprint7full001",
+    "name": "Sprint 7 — Trade API + Fauxnance + Kafka Duplicate-Delivery Demo",
+    "description": "Covers every real HTTP surface in this sprint (trade-api, and the live Fauxnance sandbox), plus the Kafka duplicate-delivery demo (SEC4-616) documented as runnable steps.\n\n**Important — read before running:**\n\n1. **The Trade Executor has no HTTP API at all.** It's a background worker (Kafka consumer + producer + JDBC client + outbound HTTP client to Fauxnance) — it never listens on a port, so there is nothing for Postman to call directly. The \"Trade Executor (no HTTP surface)\" folder documents how to check on it instead (process check, consumer-group lag, log tail).\n2. **Kafka has no native Postman request type used here.** The \"Kafka — Duplicate Delivery Demo\" folder's items are placeholders (a harmless GET to trade-api's health endpoint) whose real content is in each item's Description tab — copy the shell command from there into a terminal. This keeps the collection valid/importable everywhere rather than relying on Postman's newer, less portable Kafka request type.\n3. **Stack must already be running** per `design/local-demo-runbook.md` — Postgres, Kafka (with topics created), trade-api, and the executor process, all locally.\n4. **Fauxnance's mock data is US-equity only.** The demo seed's own instruments (`TCS`, `INFY`) are NOT in it — use `AAPL` (already wired into this collection's `{{symbol}}` variable) for anything that needs to actually fill. If `AAPL` isn't in your local `instruments` table yet, run the INSERT in `design/local-demo-runbook.md` step 6, Option B first.\n5. **No token-minting script needed** — this collection's pre-request script mints a fresh HS256 JWT automatically before every request, from the `jwtSecret`/`jwtIssuer`/`accountId` collection variables (must match your `.env`). Nothing to run separately.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8085", "type": "string" },
+    { "key": "fauxnanceBaseUrl", "value": "https://y4t9nq2bqf.execute-api.eu-west-2.amazonaws.com/v1", "type": "string" },
+    { "key": "fauxnanceApiKey", "value": "replace-with-your-fauxnance-key", "type": "string" },
+    { "key": "jwtSecret", "value": "dev-only-change-me-this-secret-is-not-for-production-use", "type": "string" },
+    { "key": "jwtIssuer", "value": "auth-service", "type": "string" },
+    { "key": "kafkaBootstrapServers", "value": "localhost:9092", "type": "string", "description": "Informational only — referenced in the Kafka folder's step descriptions." },
+    { "key": "accountId", "value": "1", "type": "string" },
+    { "key": "suspendedAccountId", "value": "2", "type": "string", "description": "Seed account ACC-10002 — SUSPENDED, for the ACC-403 example." },
+    { "key": "symbol", "value": "AAPL", "type": "string" },
+    { "key": "quantity", "value": "5", "type": "string" },
+    { "key": "price", "value": "340.00", "type": "string" },
+    { "key": "token", "value": "", "type": "string", "description": "Set automatically by the collection pre-request script — do not set by hand." },
+    { "key": "orderId", "value": "", "type": "string", "description": "Set automatically by the 'Place Order' request's test script, from the orderId the response returns (with the ORD- prefix stripped)." },
+    { "key": "dupIdempotencyKey", "value": "postman-dup-demo-key-001", "type": "string" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Mints a fresh HS256 JWT before every request in this collection,",
+          "// matching the shape com.leap.tradeapi.auth.JwtService verifies:",
+          "// signed with jwtSecret, iss == jwtIssuer, carries an accountId claim.",
+          "// Uses Postman sandbox's built-in CryptoJS — nothing external to install.",
+          "",
+          "function base64url(wordArray) {",
+          "    return CryptoJS.enc.Base64.stringify(wordArray)",
+          "        .replace(/\\+/g, '-')",
+          "        .replace(/\\//g, '_')",
+          "        .replace(/=+$/, '');",
+          "}",
+          "",
+          "const header = { alg: 'HS256', typ: 'JWT' };",
+          "const now = Math.floor(Date.now() / 1000);",
+          "const payload = {",
+          "    iss: pm.collectionVariables.get('jwtIssuer'),",
+          "    sub: 'postman-demo-user',",
+          "    accountId: parseInt(pm.collectionVariables.get('accountId'), 10),",
+          "    roles: ['TRADER'],",
+          "    iat: now,",
+          "    exp: now + 3600",
+          "};",
+          "",
+          "const encHeader = base64url(CryptoJS.enc.Utf8.parse(JSON.stringify(header)));",
+          "const encPayload = base64url(CryptoJS.enc.Utf8.parse(JSON.stringify(payload)));",
+          "const signingInput = encHeader + '.' + encPayload;",
+          "const secret = pm.collectionVariables.get('jwtSecret');",
+          "const signature = base64url(CryptoJS.HmacSHA256(signingInput, secret));",
+          "",
+          "pm.collectionVariables.set('token', signingInput + '.' + signature);"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Trade API",
+      "description": "sprint-06-trade-api, port 8085. Every endpoint OrderController/AccountController expose, plus the actuator health check.",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/actuator/health", "host": ["{{baseUrl}}"], "path": ["actuator", "health"] }
+          }
+        },
+        {
+          "name": "Place Order — fillable BUY (AAPL, limit above ask)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "if (body.orderId) {",
+                  "    pm.collectionVariables.set('orderId', body.orderId.replace(/^ORD-/, ''));",
+                  "    console.log('Captured orderId (public UUID):', pm.collectionVariables.get('orderId'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": {{accountId}},\n  \"symbol\": \"{{symbol}}\",\n  \"side\": \"BUY\",\n  \"quantity\": {{quantity}},\n  \"price\": {{price}},\n  \"idempotencyKey\": \"{{$guid}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] },
+            "description": "Returns immediately with status NEW — the fill/reject decision happens asynchronously in the executor, a few hundred ms later (it polls Kafka every 500ms). Re-run 'Get order history' after a moment to see it resolve.\n\nUses `{{$guid}}` as the idempotency key so every run is naturally unique — this request will never itself trigger the ORD-409 duplicate case (see the dedicated request below for that)."
+          }
+        },
+        {
+          "name": "Cancel Order",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/orders/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "orders", "{{orderId}}"]
+            },
+            "description": "Only succeeds while the order is still NEW (ORD-409 once the executor has already settled it — this is the guarded transition, same idea as the executor's own guard 1). {{orderId}} is captured automatically by 'Place Order' above, or set it by hand from an order you already know is still NEW."
+          }
+        },
+        {
+          "name": "Get Account",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounts/{{accountId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounts", "{{accountId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Balance",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounts/{{accountId}}/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounts", "{{accountId}}", "balance"]
+            }
+          }
+        },
+        {
+          "name": "Get Positions",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounts/{{accountId}}/positions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounts", "{{accountId}}", "positions"]
+            }
+          }
+        },
+        {
+          "name": "Get Order History (all)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounts/{{accountId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounts", "{{accountId}}", "orders"]
+            }
+          }
+        },
+        {
+          "name": "Get Order History (filtered — status/from/to)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounts/{{accountId}}/orders?status=FILLED&from=2026-01-01T00:00:00Z&to=2026-12-31T23:59:59Z",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounts", "{{accountId}}", "orders"],
+              "query": [
+                { "key": "status", "value": "FILLED", "description": "One of NEW, FILLED, CANCELLED, REJECTED — optional." },
+                { "key": "from", "value": "2026-01-01T00:00:00Z", "description": "ISO-8601 instant — optional." },
+                { "key": "to", "value": "2026-12-31T23:59:59Z", "description": "ISO-8601 instant — optional." }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Trade API — error catalogue examples",
+      "description": "One request per entry in GlobalExceptionHandler.java's error envelope — {\"errorCode\":..., \"message\":...}. Each is set up to deliberately trigger that specific error.",
+      "item": [
+        {
+          "name": "VAL-422 — validation failure (missing required field)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": {{accountId}},\n  \"symbol\": \"{{symbol}}\",\n  \"side\": \"BUY\",\n  \"quantity\": {{quantity}}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] },
+            "description": "price and idempotencyKey both missing — 422 VAL-422."
+          }
+        },
+        {
+          "name": "ACC-403 — suspended account",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": {{suspendedAccountId}},\n  \"symbol\": \"{{symbol}}\",\n  \"side\": \"BUY\",\n  \"quantity\": 1,\n  \"price\": {{price}},\n  \"idempotencyKey\": \"{{$guid}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] },
+            "description": "Seed account ACC-10002 (accountId 2) is SUSPENDED — 403 ACC-403. Note this token was minted for {{accountId}} (default 1); AccountAccessDeniedException (also ACC-403) is what you get if the token's own accountId doesn't reach the account you're addressing at all — same code, deliberately, so account keys can't be enumerated by the error response."
+          }
+        },
+        {
+          "name": "INS-404 — unknown symbol",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": {{accountId}},\n  \"symbol\": \"NOSUCHSYMBOL\",\n  \"side\": \"BUY\",\n  \"quantity\": 1,\n  \"price\": {{price}},\n  \"idempotencyKey\": \"{{$guid}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] }
+          }
+        },
+        {
+          "name": "ORD-400 — insufficient funds",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": {{accountId}},\n  \"symbol\": \"{{symbol}}\",\n  \"side\": \"BUY\",\n  \"quantity\": 100000,\n  \"price\": {{price}},\n  \"idempotencyKey\": \"{{$guid}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] },
+            "description": "100,000 shares at {{price}} vastly exceeds the seed account's cash balance — 400 ORD-400."
+          }
+        },
+        {
+          "name": "ORD-409 (1/2) — first request with a fixed idempotency key (expect 200)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": {{accountId}},\n  \"symbol\": \"{{symbol}}\",\n  \"side\": \"BUY\",\n  \"quantity\": 1,\n  \"price\": {{price}},\n  \"idempotencyKey\": \"{{dupIdempotencyKey}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] },
+            "description": "Uses the fixed {{dupIdempotencyKey}} (not {{$guid}}) on purpose, so the next request can collide with it. Run this one first."
+          }
+        },
+        {
+          "name": "ORD-409 (2/2) — same idempotency key again (expect 409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": {{accountId}},\n  \"symbol\": \"{{symbol}}\",\n  \"side\": \"BUY\",\n  \"quantity\": 1,\n  \"price\": {{price}},\n  \"idempotencyKey\": \"{{dupIdempotencyKey}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/orders", "host": ["{{baseUrl}}"], "path": ["api", "v1", "orders"] },
+            "description": "Identical body to (1/2), same idempotencyKey — the DB's unique constraint on orders.idempotency_key rejects this as 409 ORD-409 'Duplicate order'. Note: if you re-run this whole pair more than once, (1/2) will itself start returning 409 too, since {{dupIdempotencyKey}} is a fixed value — change the collection variable if you need a clean pair again."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Fauxnance API",
+      "description": "The live external market-data sandbox the executor calls (executor/.../fauxnance/FauxnanceHttpClient.java). Auth is a plain X-Api-Key header, not the JWT used above.",
+      "item": [
+        {
+          "name": "Get single quote",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Api-Key", "value": "{{fauxnanceApiKey}}" }],
+            "url": {
+              "raw": "{{fauxnanceBaseUrl}}/quotes/{{symbol}}",
+              "host": ["{{fauxnanceBaseUrl}}"],
+              "path": ["quotes", "{{symbol}}"]
+            },
+            "description": "What ExecutionService calls, once per order, to price it. Response has bid/ask/price — FillRule settles a BUY at ask, a SELL at bid."
+          }
+        },
+        {
+          "name": "Get batch quotes (what the market-data poller calls)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Api-Key", "value": "{{fauxnanceApiKey}}" }],
+            "url": {
+              "raw": "{{fauxnanceBaseUrl}}/quotes?symbols=AAPL,MSFT,GOOGL",
+              "host": ["{{fauxnanceBaseUrl}}"],
+              "path": ["quotes"],
+              "query": [{ "key": "symbols", "value": "AAPL,MSFT,GOOGL" }]
+            },
+            "description": "Up to 25 symbols per call (MarketDataPoller.MAX_SYMBOLS_PER_REQUEST) — the quota-relevant HTTP request. The poller publishes one Kafka message per symbol from this single response, never one message per batch."
+          }
+        },
+        {
+          "name": "Get remaining daily quota",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Api-Key", "value": "{{fauxnanceApiKey}}" }],
+            "url": {
+              "raw": "{{fauxnanceBaseUrl}}/usage",
+              "host": ["{{fauxnanceBaseUrl}}"],
+              "path": ["usage"]
+            },
+            "description": "2000 requests/day per key, resets 00:00 UTC. Neither the executor nor the poller currently checks this before calling (per code as written) — this is purely an inspection endpoint for you."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Trade Executor (no HTTP surface)",
+      "description": "There is nothing to call here — the executor never binds a listening port. It only makes outbound connections (Kafka consumer + producer, JDBC to Postgres, HTTP to Fauxnance). This folder documents the commands that stand in for 'hitting an endpoint':\n\n**Is it running at all?**\n```\njps -l | grep executor.Main\n```\n\n**Is it actually connected and consuming (Kafka's view)?**\n```\nkafka-consumer-groups.sh --bootstrap-server {{kafkaBootstrapServers}} --describe --group trade-executor\n```\nA live instance shows a real CONSUMER-ID/HOST; \"no active members\" means it's not connected.\n\n**Is it doing anything (its own output)?**\n```\ntail -f /tmp/executor.log\n```\n(wherever you redirected its stdout/stderr when launching it — see design/local-demo-runbook.md step 4).\n\n**What it does per order** — trace: `ExecutionService.execute()` → duplicate check → instrument/account re-checks → `FauxnanceHttpClient.getQuote()` (the Fauxnance API folder's 'Get single quote' request above is literally the same call) → `FillRule.decide()` → `SettlementService.settle()`.",
+      "item": []
+    },
+    {
+      "name": "Kafka — Duplicate Delivery Demo (SEC4-616)",
+      "description": "Proves a replayed order message does not double-debit the account and does not produce a second trade-events message (design/demo-duplicate-delivery.md, and design/local-demo-runbook.md step 8, run for real).\n\nPostman has no portable, universally-importable request type for raw Kafka produce/consume, so the three Kafka-specific steps below are placeholders — each one's Description tab holds the exact shell command to run in a terminal instead. The balance/position checks around them ARE real requests you can run from Postman.\n\n**Run in this order:**\n1. Place an order (Trade API folder) and let it resolve to a terminal status (FILLED or REJECTED) — check via 'Get Order History' until status isn't NEW anymore.\n2. 'Step 1 — Capture the ORDER_PLACED message' (placeholder, see its description).\n3. 'Step 2 — Balance & position BEFORE replay' (real requests, below).\n4. 'Step 3 — Replay the captured message' (placeholder, see its description).\n5. 'Step 4 — Balance & position AFTER replay' (real requests, below) — must be identical to step 3's result.\n6. 'Step 5 — Confirm exactly one trade-events message' (placeholder, see its description).",
+      "item": [
+        {
+          "name": "Step 1 — Capture the ORDER_PLACED message [terminal command — see description]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/actuator/health", "host": ["{{baseUrl}}"], "path": ["actuator", "health"] }
+          },
+          "description": "This request itself does nothing useful — it's a harmless placeholder so this step has a valid Postman item. Run this in a terminal instead, then paste the matching line into a file (e.g. /tmp/replay-message.txt):\n\n```\ndocker exec team4se4-kafka-1 /opt/kafka/bin/kafka-console-consumer.sh \\\n  --bootstrap-server {{kafkaBootstrapServers}} \\\n  --topic orders --from-beginning --property print.key=true --timeout-ms 6000 \\\n  | grep \"<the order's public UUID — from {{orderId}}, or the Place Order response>\"\n```\n\nSave the matching `<key>\\t<json value>` line, preserving the tab, to a file for step 3."
+        },
+        {
+          "name": "Step 2a — Balance BEFORE replay",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounts/{{accountId}}/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounts", "{{accountId}}", "balance"]
+            }
+          }
+        },
+        {
+          "name": "Step 2b — Positions BEFORE replay",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounts/{{accountId}}/positions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounts", "{{accountId}}", "positions"]
+            }
+          }
+        },
+        {
+          "name": "Step 3 — Replay the captured message [terminal command — see description]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/actuator/health", "host": ["{{baseUrl}}"], "path": ["actuator", "health"] }
+          },
+          "description": "Placeholder — run this in a terminal, preserving the key exactly (the file from step 1, formatted as `<key>:<value>` on one line):\n\n```\ndocker exec -i team4se4-kafka-1 /opt/kafka/bin/kafka-console-producer.sh \\\n  --bootstrap-server {{kafkaBootstrapServers}} \\\n  --topic orders --property \"parse.key=true\" --property \"key.separator=:\" \\\n  < /tmp/replay-message.txt\n```\n\nWait a few seconds for the executor to pick it up (it polls every 500ms) before running step 4."
+        },
+        {
+          "name": "Step 4a — Balance AFTER replay (must match 2a exactly)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "console.log('Compare this cashBalance against Step 2a\\'s response by hand — they must be identical.');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounts/{{accountId}}/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounts", "{{accountId}}", "balance"]
+            }
+          }
+        },
+        {
+          "name": "Step 4b — Positions AFTER replay (must match 2b exactly)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounts/{{accountId}}/positions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounts", "{{accountId}}", "positions"]
+            }
+          }
+        },
+        {
+          "name": "Step 5 — Confirm exactly one trade-events message [terminal command — see description]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/actuator/health", "host": ["{{baseUrl}}"], "path": ["actuator", "health"] }
+          },
+          "description": "Placeholder — run in a terminal:\n\n```\ndocker exec team4se4-kafka-1 /opt/kafka/bin/kafka-console-consumer.sh \\\n  --bootstrap-server {{kafkaBootstrapServers}} \\\n  --topic trade-events --from-beginning --property print.key=true --timeout-ms 6000 \\\n  | grep '\"orderId\":<the order's NUMERIC id, not the UUID — check via psql or the executor log>'\n```\n\nExactly one line should match — never two. Also worth grepping the executor's log for the guard-1 dedup line:\n\n```\ngrep DUPLICATE_DELIVERY /tmp/executor.log\n```\nExpect exactly one new line after the replay, e.g. `DUPLICATE_DELIVERY orderId=7 status=FILLED — already processed, skipping`."
+        }
+      ]
+    }
+  ]
+}
