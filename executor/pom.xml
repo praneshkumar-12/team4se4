@@ -34,6 +34,16 @@
 
         <maven.surefire.version>3.5.4</maven.surefire.version>
         <maven.enforcer.version>3.6.2</maven.enforcer.version>
+
+        <!--
+            SEC4-620: SonarQube quality gate. sonar.host.url defaults to the
+            local docker-compose sonarqube service; override on the command
+            line if scanning elsewhere. Token is never hardcoded here — pass
+            -Dsonar.token="$SONAR_TOKEN" (or $env:SONAR_TOKEN on Windows).
+        -->
+        <sonar.projectKey>trade-executor</sonar.projectKey>
+        <sonar.host.url>http://localhost:9000</sonar.host.url>
+        <sonar-maven-plugin.version>4.0.0.4121</sonar-maven-plugin.version>
     </properties>
 
     <dependencies>
@@ -139,6 +149,13 @@
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+
+            <!-- SEC4-620: run with `mvn sonar:sonar -Dsonar.token="$SONAR_TOKEN"` -->
+            <plugin>
+                <groupId>org.sonarsource.scanner.maven</groupId>
+                <artifactId>sonar-maven-plugin</artifactId>
+                <version>${sonar-maven-plugin.version}</version>
             </plugin>
         </plugins>
     </build>
