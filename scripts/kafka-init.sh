@@ -21,9 +21,21 @@
 #
 set -euo pipefail
 
-COMPOSE="docker compose"
 SERVICE="kafka"
-BOOTSTRAP_SERVER="localhost:9092"
+BOOTSTRAP_SERVER="kafka:29092"
+
+if docker compose version >/dev/null 2>&1; then
+    COMPOSE_CMD=(docker compose)
+elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE_CMD=(docker-compose)
+else
+    echo "Error: neither 'docker compose' nor 'docker-compose' is available." >&2
+    exit 1
+fi
+
+compose_exec() {
+    "${COMPOSE_CMD[@]}" exec -T "$@"
+}
 
 create_topic() {
     local topic="$1"
@@ -31,7 +43,7 @@ create_topic() {
     local retention_ms="$3"
 
     echo "Creating topic '${topic}' (partitions=${partitions}, retention.ms=${retention_ms})..."
-    ${COMPOSE} exec -T "${SERVICE}" /opt/kafka/bin/kafka-topics.sh \
+    compose_exec "${SERVICE}" /opt/kafka/bin/kafka-topics.sh \
         --bootstrap-server "${BOOTSTRAP_SERVER}" \
         --create --if-not-exists \
         --topic "${topic}" \
@@ -51,4 +63,4 @@ create_topic "market-data"     6   86400000      # 1 day
 create_topic "market-data.DLT" 6   86400000
 
 echo "Done. Listing topics:"
-${COMPOSE} exec -T "${SERVICE}" /opt/kafka/bin/kafka-topics.sh --bootstrap-server "${BOOTSTRAP_SERVER}" --list
+compose_exec "${SERVICE}" /opt/kafka/bin/kafka-topics.sh --bootstrap-server "${BOOTSTRAP_SERVER}" --list
