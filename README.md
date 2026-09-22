@@ -72,8 +72,12 @@ Every failure leaves as `{"errorCode": "...", "message": "..."}` — mapped in
   was read and increments it. Zero rows affected is refused with `ORD-409`.
 - Idempotency (rule 8) is enforced by the unique constraint on
   `orders.idempotency_key`, caught and returned as `ORD-409`.
-- Authentication in Sprint 6 uses `TestTokens`, a team-owned test fixture that
-  follows `contracts/auth-api.yaml` and is never deployed. Sprint 8 swaps it for
-  the real service as a configuration change.
+- `TestTokens` (`src/test/java`) is a team-owned test fixture that follows
+  `contracts/auth-api.yaml`; it is scoped to this module's own test suite and
+  never deployed. Sprint 8 (`sprint-08-auth-service/`) is the real, running
+  auth service the deployed platform authenticates against - adopted as a
+  configuration change only (`JWT_SECRET`/`JWT_ISSUER`, both already read
+  from the environment here), no Java file in this module changed. See
+  `sprint-08-auth-service/RUNBOOK.md` for how the two fit together.
 - Tests run without a container: unit (Mockito), MyBatis slices and a full
   `@SpringBootTest` all use H2 in place of Postgres.
