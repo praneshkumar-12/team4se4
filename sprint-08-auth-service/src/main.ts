@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { HttpStatus, UnprocessableEntityException, ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
 import { RedactingLogger } from "./common/logger";
 
@@ -25,6 +26,21 @@ async function bootstrap(): Promise<void> {
       exceptionFactory: () => new UnprocessableEntityException(),
     }),
   );
+
+  // Generated from the @ApiTags/@ApiOperation/@ApiResponse decorators on
+  // AuthController and the @ApiProperty decorators on the DTOs (SEC4-623),
+  // not maintained by hand - the document served here is evidence that the
+  // running code still matches contracts/auth-api.yaml, not a replacement
+  // for it. Two paths, chosen and recorded in this service's README: the
+  // human page at /docs, the JSON document at /docs/json.
+  const openApiConfig = new DocumentBuilder()
+    .setTitle("Auth service")
+    .setDescription("Registration, login, token refresh and current-user lookup for the Enterprise Trading Platform.")
+    .setVersion("1.0.0")
+    .addBearerAuth()
+    .build();
+  const openApiDocument = SwaggerModule.createDocument(app, openApiConfig);
+  SwaggerModule.setup("docs", app, openApiDocument, { jsonDocumentUrl: "docs/json" });
 
   const config = app.get(ConfigService);
   const port = config.get<number>("PORT", 3000);

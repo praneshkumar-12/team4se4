@@ -35,6 +35,40 @@ laptop and a container are read from the environment at runtime and appear
 in no committed file. Locally, outside Docker: copy `.env.example` in this
 folder to `.env` and run `npm run start:dev`.
 
+## Integration test: the Trade REST API needs no code change (SEC4-629)
+
+`auth-service` joins the same local orchestration as `trade-api` (root
+`docker-compose.yml`), reads the same `JWT_SECRET` `trade-api` verifies
+with, and both point `JWT_ISSUER` at the same value (`auth-service`,
+each service's own default - no consumer hard-requires a particular
+issuer). Adopting this service is a configuration change only: `git diff
+sprint-07 -- 'sprint-06-trade-api/**/*.java'` is empty.
+
+```bash
+docker compose up -d --build postgres kafka trade-api auth-service
+sprint-08-auth-service/integration-test.sh
+```
+
+The script registers a user, logs in against the running auth service,
+calls a protected Trade REST API route with the resulting access token
+(expects 200), calls the same route with no token (expects 401), and
+calls it again with a token signed by a key the platform should not trust
+(expects 401). Results are also recorded in
+`security-review/team4-auth-service-review.md`'s evidence table.
+
+## API documentation (SEC4-630)
+
+Generated from the running code (`@ApiTags`/`@ApiOperation`/`@ApiResponse`
+on `AuthController`, `@ApiProperty` on the DTOs), not maintained by hand:
+
+| Path | What it serves |
+|---|---|
+| `/docs` | Swagger UI - the human-readable page |
+| `/docs/json` | the OpenAPI 3.0 document itself, as JSON |
+
+This is evidence that the running service still matches
+`contracts/auth-api.yaml`, not a replacement for it.
+
 ## Layout
 
 | Path | Role |
