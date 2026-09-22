@@ -50,7 +50,7 @@ Built as `src/users/` and `src/common/logger.ts`:
 | `password-hasher.spec.ts` | The three named paths: correct password verifies, incorrect fails, and no general-purpose digest is used (asserted via the `$argon2id$` prefix, not a bare hex digest) |
 | `users.repository.ts` | Parameterised Postgres queries only; exposes Postgres error codes (23505/23503) for the controller layer to map, without the repository itself knowing about HTTP |
 | `users.module.ts` | Exports the repository and hasher |
-| `src/db/schema.ts` (edit — extends Person 3's file) | Adds the `users` table: `account_id` FK to the Sprint 3 `accounts` table this service never writes to, `ON DELETE RESTRICT` |
+| `db/changelog/changes/001-users.sql` (this file's original version, since replaced — see below) | Added the `users` table: `account_id` FK to the Sprint 3 `accounts` table this service never writes to, `ON DELETE RESTRICT` |
 | `src/common/logger.ts` (+ spec) | `RedactingLogger`: redacts `password`/`passwordHash`/`accessToken`/`refreshToken`/`authorization`/`token` at any depth, case-insensitive, including inside a serialised `Error`'s own properties — the indirect route the ticket names |
 
 ## Files touched (from `git diff --name-status`)
@@ -75,9 +75,16 @@ A  sprint-08-auth-service/src/users/password-hasher.spec.ts
 A  sprint-08-auth-service/src/users/users.module.ts
 A  sprint-08-auth-service/src/users/users.repository.ts
 M  sprint-08-auth-service/src/app.module.ts       (register AuthModule + APP_FILTER)
-M  sprint-08-auth-service/src/db/schema.ts         (add the users table)
+M  sprint-08-auth-service/src/db/schema.ts         (add the users table; superseded - see note below)
 M  sprint-08-auth-service/src/main.ts              (422 validation status, RedactingLogger)
 ```
+
+**Note:** the `users` table's DDL originally lived in `src/db/schema.ts`
+(a TypeScript array run at app startup) as this listing shows. It was
+later moved to a proper Liquibase changelog
+(`db/changelog/changes/001-users.sql`) in a follow-up pass on
+`sprint-08-person-3` - see `person-3-guide.md` and `RUNBOOK.md`'s "A
+seventh pass" section. `schema.ts` no longer exists on `sprint-08`.
 
 ## Verifying this work independently
 
