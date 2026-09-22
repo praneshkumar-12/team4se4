@@ -73,4 +73,5 @@ and revokes the one presented. A second presentation of an already-rotated
 token is treated as theft: every live refresh token for that user is
 revoked and the presentation answers AUTH-401.
 
-See `security-review/` for the full OWASP write-up (SEC4-631).
+See [`security-review/team4-auth-service-review.md`](security-review/team4-auth-service-review.md)
+for the full OWASP write-up (SEC4-631), filled in as the service was built.
