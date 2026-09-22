@@ -11,6 +11,20 @@
  * table it references. This array is that order.
  */
 export const MIGRATIONS: readonly string[] = [
+  // SEC4-624: the credential store. account_id references the Sprint 3
+  // accounts table this service does not own and never creates a row in -
+  // registration only links a user to an accountId that must already
+  // exist. ON DELETE RESTRICT: an account with a registered user cannot be
+  // silently orphaned by a delete in the Trade REST API's schema.
+  `CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username VARCHAR(64) NOT NULL,
+    password_hash TEXT NOT NULL,
+    account_id BIGINT NOT NULL REFERENCES accounts(account_id) ON DELETE RESTRICT,
+    roles TEXT[] NOT NULL DEFAULT ARRAY['CUSTOMER'],
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_users_username UNIQUE (username)
+  )`,
   // SEC4-627: refresh tokens. user_id is not an FK to users(id) here - this
   // service's own bootstrap does not own migration-ordering guarantees the
   // way Liquibase does for the Sprint 3 schema, and the only writer of this

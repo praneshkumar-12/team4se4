@@ -3,6 +3,7 @@ import { ConfigModule } from "@nestjs/config";
 import { HealthController } from "./health/health.controller";
 import { TokensModule } from "./tokens/tokens.module";
 import { DbModule } from "./db/db.module";
+import { UsersModule } from "./users/users.module";
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { DbModule } from "./db/db.module";
     ConfigModule.forRoot({ isGlobal: true }),
     DbModule,
     TokensModule,
+    UsersModule,
   ],
   controllers: [HealthController],
   providers: [],
