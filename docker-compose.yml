@@ -97,8 +97,12 @@ services:
   # has built the Sprint 3 schema.
   auth-service:
     build:
-      context: .
-      dockerfile: sprint-08-auth-service/Dockerfile
+      # Its own directory as context, unlike trade-api: this service has no
+      # sibling Maven module to pull in, so the Dockerfile's COPY paths
+      # (package.json, src/, ...) are relative to sprint-08-auth-service/
+      # itself rather than the repo root.
+      context: ./sprint-08-auth-service
+      dockerfile: Dockerfile
     environment:
       PORT: 3000
       DB_HOST: postgres
