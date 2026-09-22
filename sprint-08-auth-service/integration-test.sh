@@ -10,6 +10,13 @@
 # Usage: ./integration-test.sh [auth-base-url] [trade-api-base-url]
 set -euo pipefail
 
+# Resolve relative to this script, not the caller's cwd: the `node -e` call
+# below needs to `require("jsonwebtoken")`, which only resolves under this
+# directory's node_modules (found the hard way - it works when you `cd`
+# here first and silently breaks otherwise, since `node -e` resolves
+# modules relative to the process's cwd).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 AUTH_BASE="${1:-http://localhost:3000}"
 TRADE_BASE="${2:-http://localhost:8085}"
 ACCOUNT_ID=1
@@ -52,7 +59,7 @@ status_no_token=$(curl -s -o /dev/null -w '%{http_code}' "$TRADE_BASE/api/v1/acc
 expect_status "protected route with no token" 401 "$status_no_token"
 
 echo "== Calling the same route with a token signed by a key the platform should not trust =="
-untrusted_token=$(node -e "
+untrusted_token=$(cd "$SCRIPT_DIR" && node -e "
 const jwt = require('jsonwebtoken');
 console.log(jwt.sign(
   { accountId: $ACCOUNT_ID, roles: ['CUSTOMER'] },
