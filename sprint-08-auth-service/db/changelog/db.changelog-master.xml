@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.29.xsd">
+
+    <!--
+        The auth service's own schema (SEC4-624's "your migration or
+        bootstrap"): users, the credential store, and refresh_tokens
+        (SEC4-627). Deliberately its own changelog, not an addition to
+        sprint-06-trade-api's - this service owns and applies its own
+        schema, per the Sprint 8 brief ("your migration or bootstrap"),
+        even though both run against the same Postgres instance the
+        platform has used since Sprint 3 (users.account_id is a foreign
+        key to that schema's accounts table, so this changelog must run
+        after trade-api's has built it: see the root docker-compose.yml's
+        auth-service-migrate job, which depends on trade-api being
+        healthy - trade-api runs its own changelog internally via Spring
+        Boot's Liquibase starter on its own startup).
+
+        Same convention as trade-api's changelog: every changeset is
+        precondition-guarded with onFail="MARK_RAN", so re-running this
+        against a database that already has these tables is a no-op.
+        Changeset order matters here too: 001-users before
+        002-refresh-tokens, because the latter's user_id column is a
+        foreign key to the former's table.
+    -->
+
+    <changeSet id="001-users" author="team4">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="users"/>
+            </not>
+        </preConditions>
+        <sqlFile path="changes/001-users.sql"
+                 relativeToChangelogFile="true"
+                 splitStatements="true"
+                 endDelimiter=";"/>
+    </changeSet>
+
+    <changeSet id="002-refresh-tokens" author="team4">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="refresh_tokens"/>
+            </not>
+        </preConditions>
+        <sqlFile path="changes/002-refresh-tokens.sql"
+                 relativeToChangelogFile="true"
+                 splitStatements="true"
+                 endDelimiter=";"/>
+    </changeSet>
+
+</databaseChangeLog>

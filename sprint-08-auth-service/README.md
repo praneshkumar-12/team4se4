@@ -35,6 +35,38 @@ laptop and a container are read from the environment at runtime and appear
 in no committed file. Locally, outside Docker: copy `.env.example` in this
 folder to `.env` and run `npm run start:dev`.
 
+`docker compose up auth-service` brings up its full dependency chain
+automatically: `postgres` → `trade-api` (builds the Sprint 3 schema via
+its own Liquibase run) → `auth-service-migrate` (builds `users` and
+`refresh_tokens` on top of it) → `auth-service`.
+
+## Schema changes (SEC4-624's "your migration or bootstrap")
+
+This service's schema lives in `db/changelog/db.changelog-master.xml`,
+applied with [Liquibase](https://www.liquibase.org/) - the same tool the
+Trade REST API has used for its own schema since Sprint 3, but run here as
+a one-shot job (`auth-service-migrate` in the root `docker-compose.yml`,
+the official `liquibase/liquibase` image) rather than as a library the app
+boots with, since this service isn't a JVM process. This is a deliberate
+choice over TypeScript code running DDL at startup: one real migration
+history (`DATABASECHANGELOG`), one tool, changeset ordering Liquibase
+itself enforces rather than an array a developer has to order by hand.
+
+**Adding a new schema change:** add a new `.sql` file under
+`db/changelog/changes/`, and a new `<changeSet>` in
+`db.changelog-master.xml` referencing it, precondition-guarded the same
+way the existing two are. Never edit an already-applied changeset in
+place - Liquibase checksums each one and will refuse to proceed if a
+previously-run changeset's content has changed underneath it.
+
+**Running it by hand**, against whatever `docker compose up` already
+started:
+
+```bash
+docker compose run --rm auth-service-migrate update    # apply
+docker compose run --rm auth-service-migrate status     # see what's pending
+```
+
 ## Integration test: the Trade REST API needs no code change (SEC4-629)
 
 `auth-service` joins the same local orchestration as `trade-api` (root
@@ -79,7 +111,8 @@ This is evidence that the running service still matches
 | `src/auth/` | controller, service, DTOs, guard, throttle - the four contract routes |
 | `src/users/` | credential store: repository, argon2id hasher |
 | `src/tokens/` | access token issuance, refresh token issuance/rotation |
-| `src/db/` | Postgres pool and this service's own bootstrap (`schema.ts`) |
+| `src/db/` | just the Postgres pool - the schema itself is `db/changelog/`, applied by Liquibase, not this code |
+| `db/changelog/` | this service's own Liquibase changelog (users, refresh_tokens) - see "Schema changes" below |
 | `src/common/` | the platform error envelope filter, the redacting logger |
 
 Specs sit beside the code they cover, as `*.spec.ts`.

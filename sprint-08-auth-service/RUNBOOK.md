@@ -51,10 +51,10 @@ interface on paper:
    interface the guard and the login flow are both written against.
 3. **Person 3** — SEC4-626 (guard, independent — it only needs
    `JWT_SECRET`/`JWT_ISSUER` from config, not Person 2's code) and SEC4-627
-   (refresh rotation, needs its own Postgres pool + bootstrap, introduced
-   here as `src/db/`).
-4. **Person 1** — SEC4-624 (credential store, extends the same `src/db/`
-   bootstrap Person 3 started) and SEC4-623 (the controller that wires
+   (refresh rotation, needs its own Postgres pool, introduced here as
+   `src/db/pool.provider.ts` and `db.module.ts`).
+4. **Person 1** — SEC4-624 (credential store, using the same `src/db/`
+   pool Person 3 introduced) and SEC4-623 (the controller that wires
    registration/login/refresh/`/auth/me` against Person 2's and Person 3's
    already-merged services).
 5. **Person 4** — SEC4-628 (closes a real timing oracle in Person 1's
@@ -76,6 +76,36 @@ workstream started* (Person 5's second pass explicitly merged `sprint-08`
 into `sprint-08-person-5` first, to pick up everyone else's finished work
 before adding SEC4-629/630), then merged back with `--no-ff` so the branch
 boundary stays visible in `git log --graph`.
+
+### A seventh pass: schema moved to Liquibase
+
+After all five branches above had merged, SEC4-624's `users` table and
+SEC4-627's `refresh_tokens` table were reworked from a TypeScript
+`OnModuleInit` bootstrap into a real Liquibase changelog
+(`db/changelog/db.changelog-master.xml`), applied by a dedicated
+`auth-service-migrate` job in `docker-compose.yml`. This was requested
+after the fact, once it was clear this service should own its schema the
+way SEC4-624's own wording says ("your migration or bootstrap") using the
+tool this repo already standardises on for schema changes (Liquibase, used
+by the Trade REST API since Sprint 3) rather than ad hoc code.
+
+`sprint-08-person-3` - the branch that introduced `src/db/` in the first
+place - was synced back up to `sprint-08`'s tip and reused for this, on
+the reasoning that whoever owns a subsystem is the natural branch to carry
+a rework of it, the same way Person 5's branch was reused for its second
+pass. Tagged `[Person 3][SEC4-624/SEC4-627]` in the commit titles, since
+the rework touches both tickets' tables in the same changelog file and
+CLAUDE.md's commit format explicitly supports two ticket IDs.
+
+Verified against a real, completely empty `postgres-data` Docker volume
+before committing: `docker compose up` brought up `postgres` → `trade-api`
+(Sprint 3 schema) → `auth-service-migrate` (this service's schema) →
+`auth-service`, all healthy; the CHECK and foreign-key constraints were
+exercised directly with `psql` (a bad role, an empty roles array and an
+unknown `accountId` were all rejected; a valid `ADMIN` role was accepted);
+re-running the migration against an already-migrated database was a
+genuine no-op; and the full SEC4-629 integration test passed against
+tables this job created, not the old bootstrap.
 
 ## Build, run, test
 
