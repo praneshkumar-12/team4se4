@@ -1,9 +1,12 @@
 import { ConflictException, UnauthorizedException, UnprocessableEntityException } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { UsersRepository, UserRecord } from "../users/users.repository";
-import { PasswordHasher } from "../users/password-hasher";
+import { PasswordHasher, getDummyPasswordHash } from "../users/password-hasher";
 import { TokenService } from "../tokens/token.service";
 import { RefreshTokenService } from "../tokens/refresh-token.service";
+import { LoginThrottleService } from "./login-throttle.service";
+
+const CALLER_IP = "203.0.113.1";
 
 function buildUser(overrides: Partial<UserRecord> = {}): UserRecord {
   return {
@@ -38,8 +41,10 @@ function buildService() {
     rotate: jest.fn(),
   } as unknown as jest.Mocked<RefreshTokenService>;
 
-  const service = new AuthService(users, passwordHasher, tokenService, refreshTokens);
-  return { service, users, passwordHasher, tokenService, refreshTokens };
+  const throttle = new LoginThrottleService();
+
+  const service = new AuthService(users, passwordHasher, tokenService, refreshTokens, throttle);
+  return { service, users, passwordHasher, tokenService, refreshTokens, throttle };
 }
 
 describe("AuthService", () => {
@@ -88,7 +93,7 @@ describe("AuthService", () => {
       users.findByUsername.mockResolvedValue(buildUser());
       passwordHasher.verify.mockResolvedValue(true);
 
-      const result = await service.login({ username: "priya.menon", password: "correct horse battery staple" });
+      const result = await service.login({ username: "priya.menon", password: "correct horse battery staple" }, CALLER_IP);
 
       expect(result.accessToken).toBe("signed.access.token");
       expect(result.refreshToken).toBe("issued-refresh-token");
@@ -101,14 +106,62 @@ describe("AuthService", () => {
       users.findByUsername.mockResolvedValue(buildUser());
       passwordHasher.verify.mockResolvedValue(false);
 
-      await expect(service.login({ username: "priya.menon", password: "wrong" })).rejects.toThrow(UnauthorizedException);
+      await expect(service.login({ username: "priya.menon", password: "wrong" }, CALLER_IP)).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it("refuses an unknown user with AUTH-401", async () => {
       const { service, users } = buildService();
       users.findByUsername.mockResolvedValue(null);
 
-      await expect(service.login({ username: "nobody", password: "whatever" })).rejects.toThrow(UnauthorizedException);
+      await expect(service.login({ username: "nobody", password: "whatever" }, CALLER_IP)).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it("verifies against the fixed dummy hash for an unknown user, not an early return (SEC4-628 uniform failure)", async () => {
+      const { service, users, passwordHasher } = buildService();
+      users.findByUsername.mockResolvedValue(null);
+      passwordHasher.verify.mockResolvedValue(false);
+
+      await expect(service.login({ username: "nobody", password: "whatever" }, CALLER_IP)).rejects.toThrow(
+        UnauthorizedException,
+      );
+
+      const dummyHash = await getDummyPasswordHash();
+      expect(passwordHasher.verify).toHaveBeenCalledWith(dummyHash, "whatever");
+    });
+
+    it("verifies against the real stored hash for a known user", async () => {
+      const { service, users, passwordHasher } = buildService();
+      const user = buildUser();
+      users.findByUsername.mockResolvedValue(user);
+      passwordHasher.verify.mockResolvedValue(false);
+
+      await expect(service.login({ username: user.username, password: "wrong" }, CALLER_IP)).rejects.toThrow(
+        UnauthorizedException,
+      );
+
+      expect(passwordHasher.verify).toHaveBeenCalledWith(user.passwordHash, "wrong");
+    });
+
+    it("throttles a caller after repeated failures, without touching the repository", async () => {
+      const { service, users, passwordHasher } = buildService();
+      users.findByUsername.mockResolvedValue(null);
+      passwordHasher.verify.mockResolvedValue(false);
+
+      for (let i = 0; i < LoginThrottleService.MAX_ATTEMPTS; i++) {
+        await expect(service.login({ username: "nobody", password: "whatever" }, CALLER_IP)).rejects.toThrow(
+          UnauthorizedException,
+        );
+      }
+
+      users.findByUsername.mockClear();
+      await expect(service.login({ username: "nobody", password: "whatever" }, CALLER_IP)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(users.findByUsername).not.toHaveBeenCalled();
     });
   });
 

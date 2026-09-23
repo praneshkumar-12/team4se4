@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, HttpStatus, Ip, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { AuthService } from "./auth.service";
 import { RegisterDto } from "./dto/register.dto";
@@ -29,8 +29,8 @@ export class AuthController {
   @ApiResponse({ status: 200, type: TokenResponseDto })
   @ApiResponse({ status: 401, description: "AUTH-401: unauthorised" })
   @ApiResponse({ status: 422, description: "VAL-422: invalid input" })
-  login(@Body() body: LoginDto): Promise<TokenResponseDto> {
-    return this.authService.login(body);
+  login(@Body() body: LoginDto, @Ip() callerIp: string): Promise<TokenResponseDto> {
+    return this.authService.login(body, callerIp);
   }
 
   @Post("refresh")
