@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { Injectable, Logger, UnauthorizedException } from "@nestjs/common";
 import { createHash, randomBytes } from "crypto";
 import { RefreshTokenRepository } from "./refresh-token.repository";
 
@@ -19,6 +19,8 @@ export interface RotatedRefreshToken {
  */
 @Injectable()
 export class RefreshTokenService {
+  private readonly logger = new Logger(RefreshTokenService.name);
+
   constructor(private readonly repository: RefreshTokenRepository) {}
 
   /** Called on login: a freshly authenticated user gets a first refresh token. */
@@ -49,6 +51,10 @@ export class RefreshTokenService {
       // every live refresh token for this user is revoked, ending both
       // sessions rather than leaving one of them live and undetected.
       await this.repository.revokeAllForUser(row.userId);
+      // The A09 finding this answers: a replayed refresh token is exactly
+      // the question "what happened at the moment someone reports a
+      // stolen session", and this is the only record of it.
+      this.logger.warn({ event: "refresh_reuse_detected", userId: row.userId });
       throw new UnauthorizedException();
     }
 
