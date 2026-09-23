@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, UnauthorizedException, UnprocessableEntityException } from "@nestjs/common";
 import { UsersRepository, UserRecord, FOREIGN_KEY_VIOLATION, UNIQUE_VIOLATION, pgErrorCode } from "../users/users.repository";
-import { PasswordHasher } from "../users/password-hasher";
+import { PasswordHasher, getDummyPasswordHash } from "../users/password-hasher";
 import { TokenService } from "../tokens/token.service";
 import { RefreshTokenService } from "../tokens/refresh-token.service";
 import { VerifiedUser } from "./guards/jwt-auth.guard";
@@ -10,6 +10,7 @@ import { RefreshDto } from "./dto/refresh.dto";
 import { UserResponseDto } from "./dto/user-response.dto";
 import { TokenResponseDto } from "./dto/token-response.dto";
 import { Role } from "./dto/role";
+import { LoginThrottleService } from "./login-throttle.service";
 
 @Injectable()
 export class AuthService {
@@ -18,6 +19,7 @@ export class AuthService {
     private readonly passwordHasher: PasswordHasher,
     private readonly tokenService: TokenService,
     private readonly refreshTokens: RefreshTokenService,
+    private readonly throttle: LoginThrottleService,
   ) {}
 
   /**
@@ -52,14 +54,31 @@ export class AuthService {
     }
   }
 
-  async login(dto: LoginDto): Promise<TokenResponseDto> {
-    const user = await this.users.findByUsername(dto.username);
-    const matches = user ? await this.passwordHasher.verify(user.passwordHash, dto.password) : false;
-
-    if (!user || !matches) {
+  /**
+   * An unknown username and a wrong password get the same status, the
+   * same body (PlatformExceptionFilter's single AUTH-401 envelope) and
+   * comparable timing. The throttle answers before either branch does any
+   * hashing, so a caller already over the limit doesn't get the oracle at
+   * all; below the limit, every failure does one argon2id verification -
+   * against the real hash for a known user, against the fixed dummy hash
+   * (same algorithm, same cost) for an unknown one - so an unknown
+   * username costs the same wall-clock time as a wrong password.
+   */
+  async login(dto: LoginDto, callerId: string): Promise<TokenResponseDto> {
+    if (this.throttle.isThrottled(callerId)) {
       throw new UnauthorizedException();
     }
 
+    const user = await this.users.findByUsername(dto.username);
+    const hashToVerify = user ? user.passwordHash : await getDummyPasswordHash();
+    const matches = await this.passwordHasher.verify(hashToVerify, dto.password);
+
+    if (!user || !matches) {
+      this.throttle.registerFailure(callerId);
+      throw new UnauthorizedException();
+    }
+
+    this.throttle.registerSuccess(callerId);
     return this.issueTokenPair(user);
   }
 
