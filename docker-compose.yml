@@ -90,6 +90,38 @@ services:
       retries: 5
       start_period: 40s
 
+  # Team 4 auth service (Sprint 8, SEC4-622). Reserved on port 3000 by
+  # infra/README.md. Waits on trade-api rather than only on postgres: the
+  # credential store's users/refresh_tokens tables carry a foreign key to
+  # accounts(account_id), which only exists once trade-api's Liquibase run
+  # has built the Sprint 3 schema.
+  auth-service:
+    build:
+      context: .
+      dockerfile: sprint-08-auth-service/Dockerfile
+    environment:
+      PORT: 3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-trade_db}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      JWT_ISSUER: ${JWT_ISSUER:-auth-service}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      trade-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health | grep -q '\"status\":\"up\"'"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
   # SonarQube quality gate (Sprint 7, SEC4-620). Independent of the other
   # services — only used locally to run `mvn sonar:sonar` / the Python
   # scanner image against. Added as its own block to keep this additive and
