@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { HealthController } from "./health/health.controller";
 import { TokensModule } from "./tokens/tokens.module";
+import { DbModule } from "./db/db.module";
 
 @Module({
   imports: [
@@ -10,6 +11,7 @@ import { TokensModule } from "./tokens/tokens.module";
     // come from docker-compose's environment block (root .env), and on a
     // laptop a developer copies .env.example to .env in this folder.
     ConfigModule.forRoot({ isGlobal: true }),
+    DbModule,
     TokensModule,
   ],
   controllers: [HealthController],
