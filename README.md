@@ -81,3 +81,109 @@ Every failure leaves as `{"errorCode": "...", "message": "..."}` — mapped in
   `sprint-08-auth-service/RUNBOOK.md` for how the two fit together.
 - Tests run without a container: unit (Mockito), MyBatis slices and a full
   `@SpringBootTest` all use H2 in place of Postgres.
+
+## Full Local Stack Script (remote Kafka VM)
+
+Use `run-local.sh` at the repo root to start this branch end-to-end with:
+
+- Kafka running in Docker on a remote Linux VM over SSH.
+- Trade API, Executor, and (optionally) Auth Service running on your local machine.
+- PostgreSQL running locally on your machine (not Dockerized by this script).
+
+### Architecture
+
+```text
+Local machine:
+  - sprint-06-trade-api (Spring Boot)
+  - executor (Java process)
+  - sprint-08-auth-service (Node/Nest, optional)
+  - PostgreSQL
+
+Remote Linux VM:
+  - Docker + Docker Compose
+  - Kafka only
+```
+
+### Configure values at top of script
+
+Edit these near the top of `run-local.sh` before first run:
+
+- `JAVA_HOME` (single hardcoded JDK path, must point to Java 21)
+- `VM_HOST`, `VM_USER`, `VM_PASSWORD`, `VM_SSH_PORT`
+- `KAFKA_VM_PORT` (must stay in `8081-8100`)
+- `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
+- `JWT_SECRET`, `JWT_ISSUER`, `LIQUIBASE_CONTEXTS`
+- `FAUXNANCE_BASE_URL`, `FAUXNANCE_API_KEY`, `POLL_INTERVAL_SECONDS`
+- `RUN_AUTH_SERVICE` (`true` or `false`)
+
+Kafka bootstrap for local services is automatically set to:
+
+```text
+KAFKA_BOOTSTRAP_SERVERS=<VM_HOST>:<KAFKA_VM_PORT>
+```
+
+### Fresh machine requirements
+
+The script validates dependencies and stops early with a clear message if any
+required tool is missing.
+
+- Java 21 JDK
+- Maven 3.9+
+- Git
+- SSH + SCP
+- sshpass (for password-based SSH automation)
+- PostgreSQL client (`psql`) and a reachable local PostgreSQL server
+- curl
+- If `RUN_AUTH_SERVICE=true`: Node.js 20+, npm, Liquibase CLI
+
+### Run
+
+```bash
+./run-local.sh
+```
+
+This flow performs:
+
+1. Local dependency and Java validation
+2. SSH and remote Docker validation
+3. Copies `docker-compose.yml`, `scripts/kafka-init.sh`, and a generated Kafka override file to the VM
+4. Starts Kafka remotely with Docker Compose
+5. Waits for broker readiness and creates all required topics (including DLTs) via `scripts/kafka-init.sh`
+6. Verifies Kafka reachability from local machine on `<VM_HOST>:<KAFKA_VM_PORT>`
+7. Validates local PostgreSQL and creates `DB_NAME` if missing
+8. Builds Maven modules in dependency order:
+   - `sprint-05-domain-engine`
+   - `sprint-06-trade-api`
+   - `executor`
+9. Builds auth service when enabled
+10. Starts local services with logs and PID tracking
+
+### Stop / status / restart
+
+```bash
+./run-local.sh stop
+./run-local.sh kafka-stop
+./run-local.sh status
+./run-local.sh restart
+```
+
+- Local logs are written under `logs/`.
+- Process IDs are tracked in `.run-local/pids.env`.
+
+### VM-exposed Kafka ports
+
+This setup is constrained to VM ports `8081-8100`. Configure `KAFKA_VM_PORT`
+within that range. The script rewrites Kafka advertised listener host/port for
+the remote deployment so local services can connect through that reachable VM
+endpoint.
+
+### Troubleshooting
+
+- `Java check failed`: set `JAVA_HOME` to a real Java 21 JDK path.
+- `Missing dependency: <tool>`: install the named tool and rerun.
+- `SSH connection failed`: verify VM host/user/password/port and network reachability.
+- `Remote Docker unavailable`: ensure Docker engine is running on the VM and user has access.
+- `Kafka failed to start`: check remote container logs printed by the script.
+- `Kafka port unreachable`: confirm VM firewall/network allows chosen `KAFKA_VM_PORT`.
+- `Database unavailable`: start local PostgreSQL and verify `DB_*` values.
+- `Service failed to start`: inspect `logs/trade-api.log`, `logs/auth-service.log`, or `logs/executor.log`.
