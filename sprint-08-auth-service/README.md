@@ -35,6 +35,19 @@ laptop and a container are read from the environment at runtime and appear
 in no committed file. Locally, outside Docker: copy `.env.example` in this
 folder to `.env` and run `npm run start:dev`.
 
+## API documentation (SEC4-630)
+
+Generated from the running code (`@ApiTags`/`@ApiOperation`/`@ApiResponse`
+on `AuthController`, `@ApiProperty` on the DTOs), not maintained by hand:
+
+| Path | What it serves |
+|---|---|
+| `/docs` | Swagger UI - the human-readable page |
+| `/docs/json` | the OpenAPI 3.0 document itself, as JSON |
+
+This is evidence that the running service still matches
+`contracts/auth-api.yaml`, not a replacement for it.
+
 ## Layout
 
 | Path | Role |
