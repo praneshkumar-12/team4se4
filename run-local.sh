@@ -6,14 +6,17 @@ set -euo pipefail
 # ============================================================================
 # Edit the values in this block for your machine/environment.
 #
-# IMPORTANT: if Java is installed in a different location, change ONLY JAVA_HOME.
+# JAVA_HOME below is just a hint: if it doesn't point at a valid Java 21
+# install, the script auto-detects one (and installs Temurin 21 via
+# Chocolatey on Windows if none is found). Set it explicitly if you want to
+# pin a specific JDK.
 # ============================================================================
 
-JAVA_HOME="/c/Program Files/Java/jdk-21"
+JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-21.0.9.10-hotspot"
 
-VM_HOST="CHANGE_ME_VM_HOST"
-VM_USER="CHANGE_ME_VM_USER"
-VM_PASSWORD="CHANGE_ME_VM_PASSWORD"
+VM_HOST="10.8.78.168"
+VM_USER="ec2-user"
+VM_PASSWORD="n3u3da!"
 VM_SSH_PORT="22"
 REMOTE_APP_DIR="/opt/team4se4-kafka"
 KAFKA_VM_PORT="8081"
@@ -22,14 +25,14 @@ DB_HOST="localhost"
 DB_PORT="5432"
 DB_NAME="trade_db"
 DB_USER="postgres"
-DB_PASSWORD="postgres_dev_password"
+DB_PASSWORD="n3u3d4!"
 
 JWT_SECRET="dev-only-change-me-this-secret-is-not-for-production-use"
 JWT_ISSUER="auth-service"
 LIQUIBASE_CONTEXTS="demo"
 
 FAUXNANCE_BASE_URL="https://y4t9nq2bqf.execute-api.eu-west-2.amazonaws.com/v1"
-FAUXNANCE_API_KEY="replace-with-your-fauxnance-key"
+FAUXNANCE_API_KEY="fnx_dev_2ntkvkZIUUuUKXTquhwnQwu26cTB2dLX"
 POLL_INTERVAL_SECONDS="120"
 
 TRADE_API_PORT="8085"
@@ -40,6 +43,7 @@ LOG_DIR="logs"
 STATE_DIR=".run-local"
 PID_FILE="${STATE_DIR}/pids.env"
 REMOTE_OVERRIDE_FILE="${STATE_DIR}/docker-compose.kafka-remote.override.yml"
+REMOTE_ENV_FILE="${STATE_DIR}/docker-compose.kafka-remote.env"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${REPO_ROOT}"
@@ -67,12 +71,49 @@ missing_dependency() {
 require_cmd() {
   local tool="$1"
   if ! command -v "${tool}" >/dev/null 2>&1; then
+    auto_install_dependency "${tool}"
+  fi
+
+  if ! command -v "${tool}" >/dev/null 2>&1; then
     missing_dependency "${tool}"
     if [[ "${tool}" == "sshpass" ]]; then
       print_sshpass_install_help >&2
     fi
     exit 1
   fi
+}
+
+# Best-effort auto-install for the small set of narrow-purpose CLI tools this
+# script needs that aren't typically part of a dev machine's base toolchain.
+# Only attempted on Windows, and only when a package manager is present;
+# otherwise falls through to the normal missing-dependency message.
+auto_install_dependency() {
+  local tool="$1"
+
+  case "${OS_NAME}" in
+    MINGW*|MSYS*|CYGWIN*) ;;
+    *) return 0 ;;
+  esac
+
+  case "${tool}" in
+    sshpass)
+      if command -v winget >/dev/null 2>&1; then
+        info "sshpass not found; installing via winget (xhcoding.sshpass-win32)"
+        winget install --id xhcoding.sshpass-win32 -e --accept-package-agreements --accept-source-agreements || true
+      fi
+      ;;
+    liquibase)
+      if command -v choco >/dev/null 2>&1; then
+        info "liquibase not found; installing via Chocolatey"
+        choco install liquibase -y || true
+      fi
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+
+  hash -r 2>/dev/null || true
 }
 
 print_sshpass_install_help() {
@@ -112,8 +153,63 @@ validate_required_config() {
   fi
 }
 
+# Searches common Windows JDK install roots for a Java 21 install and prints
+# its home directory. Used to self-heal when the JAVA_HOME hint above doesn't
+# match this machine (e.g. a different JDK vendor/patch version).
+find_java21_home() {
+  local roots=(
+    "/c/Program Files/Eclipse Adoptium"
+    "/c/Program Files/Java"
+    "/c/Program Files/Microsoft"
+    "/c/Program Files/Zulu"
+    "/c/Program Files/AdoptOpenJDK"
+    "/c/Program Files/BellSoft"
+  )
+  local root dir major
+  for root in "${roots[@]}"; do
+    [[ -d "${root}" ]] || continue
+    while IFS= read -r dir; do
+      [[ -x "${dir}/bin/java" && -x "${dir}/bin/javac" ]] || continue
+      major="$("${dir}/bin/java" -version 2>&1 | awk -F'[\".]' '/version/ {print $2; exit}')"
+      if [[ "${major}" == "21" ]]; then
+        printf '%s\n' "${dir}"
+        return 0
+      fi
+    done < <(find "${root}" -maxdepth 1 -type d -iname '*21*' 2>/dev/null)
+  done
+  return 1
+}
+
+install_temurin21_if_possible() {
+  case "${OS_NAME}" in
+    MINGW*|MSYS*|CYGWIN*) ;;
+    *) return 0 ;;
+  esac
+
+  if command -v choco >/dev/null 2>&1; then
+    info "No Java 21 install found; installing Temurin 21 via Chocolatey (this may take a few minutes)"
+    choco install temurin21 -y || info "Automatic Temurin 21 install failed; install a Java 21 JDK manually and rerun."
+  fi
+}
+
 configure_java() {
-  [[ -x "${JAVA_HOME}/bin/java" ]] || fail "JAVA_HOME is invalid: ${JAVA_HOME}. Update JAVA_HOME at the top of this script."
+  if [[ ! -x "${JAVA_HOME}/bin/java" || ! -x "${JAVA_HOME}/bin/javac" ]]; then
+    local detected
+    if detected="$(find_java21_home)"; then
+      info "Configured JAVA_HOME is invalid; using auto-detected Java 21 at ${detected}"
+      JAVA_HOME="${detected}"
+    fi
+  fi
+
+  if [[ ! -x "${JAVA_HOME}/bin/java" || ! -x "${JAVA_HOME}/bin/javac" ]]; then
+    install_temurin21_if_possible
+    local detected
+    if detected="$(find_java21_home)"; then
+      JAVA_HOME="${detected}"
+    fi
+  fi
+
+  [[ -x "${JAVA_HOME}/bin/java" ]] || fail "JAVA_HOME is invalid: ${JAVA_HOME}. Install a Java 21 JDK (e.g. 'choco install temurin21') or update JAVA_HOME at the top of this script."
   [[ -x "${JAVA_HOME}/bin/javac" ]] || fail "JAVA_HOME is missing javac: ${JAVA_HOME}. Update JAVA_HOME at the top of this script."
 
   export JAVA_HOME
@@ -186,7 +282,6 @@ check_local_dependencies() {
 
 setup_ssh_wrappers() {
   local ssh_opts=(
-    -n
     -T
     -p "${VM_SSH_PORT}"
     -o StrictHostKeyChecking=accept-new
@@ -203,6 +298,15 @@ setup_ssh_wrappers() {
 
   if [[ -n "${VM_PASSWORD}" ]]; then
     export SSHPASS="${VM_PASSWORD}"
+    # Disable pubkey auth. Without this, ssh tries any default identity file
+    # (e.g. ~/.ssh/id_ed25519) first; if it's passphrase-protected, ssh
+    # prompts locally for the passphrase — a prompt sshpass can't answer
+    # (it only auto-fills a remote "password:"/keyboard-interactive prompt)
+    # — and hangs forever with no TTY to type into. (Don't also restrict
+    # PreferredAuthentications to just "password": some servers only expose
+    # this login via keyboard-interactive, and forcing "password" breaks it.)
+    ssh_opts+=(-o PubkeyAuthentication=no)
+    scp_opts+=(-o PubkeyAuthentication=no)
     SSH_WRAPPER=(sshpass -e ssh "${ssh_opts[@]}")
     SCP_WRAPPER=(sshpass -e scp "${scp_opts[@]}")
   else
@@ -215,17 +319,47 @@ remote_ssh() {
   local cmd="${1:-}"
   [[ -n "${cmd}" ]] || fail "Internal error: remote_ssh called without a command"
 
-  local escaped_cmd
-  escaped_cmd="$(printf '%q' "${cmd}")"
-
-  # Always execute a concrete remote command in a non-interactive shell.
-  "${SSH_WRAPPER[@]}" "${VM_USER}@${VM_HOST}" "bash -lc ${escaped_cmd}"
+  # Feed the command over stdin (via a here-string) rather than encoding it
+  # into a quoted ssh argument: on Windows, sshpass/ssh argument re-quoting
+  # corrupts complex commands containing nested quotes (e.g. embedded double
+  # quotes).
+  #
+  # Also wrap in a timeout with retries: the Windows sshpass port (there is
+  # no real `sshpass` on Windows) is intermittently flaky and can hang the
+  # whole handshake indefinitely for no discernible reason — observed
+  # anywhere from ~1 in 4 calls up to several in a row against this VM. A
+  # genuine command failure (e.g. `docker info` returning non-zero because
+  # Docker really is down) returns immediately with its own exit code and is
+  # not retried; only an actual timeout (exit 124) is.
+  local attempts=5
+  local attempt rc
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
+    timeout 25 "${SSH_WRAPPER[@]}" "${VM_USER}@${VM_HOST}" "bash -ls" <<< "${cmd}"
+    rc=$?
+    if [[ "${rc}" -ne 124 ]]; then
+      return "${rc}"
+    fi
+    info "Remote SSH command timed out (attempt ${attempt}/${attempts}, likely a flaky sshpass hang) — retrying" >&2
+  done
+  return 124
 }
 
 remote_scp() {
   local src="$1"
   local dest="$2"
-  "${SCP_WRAPPER[@]}" "${src}" "${VM_USER}@${VM_HOST}:${dest}"
+
+  # Same flaky-sshpass timeout/retry treatment as remote_ssh.
+  local attempts=5
+  local attempt rc
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
+    timeout 25 "${SCP_WRAPPER[@]}" "${src}" "${VM_USER}@${VM_HOST}:${dest}"
+    rc=$?
+    if [[ "${rc}" -ne 124 ]]; then
+      return "${rc}"
+    fi
+    info "Remote SCP timed out (attempt ${attempt}/${attempts}, likely a flaky sshpass hang) — retrying" >&2
+  done
+  return 124
 }
 
 verify_ssh_and_remote_docker() {
@@ -248,15 +382,26 @@ services:
     ports:
       - "${KAFKA_VM_PORT}:9092"
 EOF
+
+  # docker-compose.yml requires JWT_SECRET (it's a hard `${JWT_SECRET:?...}`
+  # on the trade-api/auth-service blocks) and validates env interpolation for
+  # the whole file even when we only start the kafka service. Ship a .env
+  # alongside it on the VM so `up -d kafka` doesn't fail on unrelated vars.
+  cat > "${REMOTE_ENV_FILE}" <<EOF
+JWT_SECRET=${JWT_SECRET}
+EOF
 }
 
 copy_kafka_files_to_vm() {
   info "Preparing remote Kafka workspace at ${REMOTE_APP_DIR}"
-  remote_ssh "mkdir -p '${REMOTE_APP_DIR}/scripts'"
+  # REMOTE_APP_DIR commonly lives under a root-owned path (e.g. /opt) that
+  # VM_USER can't write to directly; use sudo to create it and hand it over.
+  remote_ssh "mkdir -p '${REMOTE_APP_DIR}/scripts' 2>/dev/null || { sudo mkdir -p '${REMOTE_APP_DIR}/scripts' && sudo chown -R \"\$(id -u)\":\"\$(id -g)\" '${REMOTE_APP_DIR}'; }"
 
   remote_scp "${REPO_ROOT}/docker-compose.yml" "${REMOTE_APP_DIR}/docker-compose.yml"
   remote_scp "${REPO_ROOT}/scripts/kafka-init.sh" "${REMOTE_APP_DIR}/scripts/kafka-init.sh"
   remote_scp "${REMOTE_OVERRIDE_FILE}" "${REMOTE_APP_DIR}/docker-compose.kafka-remote.override.yml"
+  remote_scp "${REMOTE_ENV_FILE}" "${REMOTE_APP_DIR}/.env"
 
   remote_ssh "chmod +x '${REMOTE_APP_DIR}/scripts/kafka-init.sh'"
 }
@@ -451,12 +596,22 @@ run_auth_liquibase() {
   [[ -n "${driver_jar}" ]] || fail "PostgreSQL JDBC driver jar not found in Maven repository for Liquibase"
 
   info "Running auth-service Liquibase migrations"
+  # On Windows, liquibase.bat internally shells out to `find /i "version"` to
+  # parse `java -version`. MSYS's GNU find normally shadows Windows'
+  # find.exe on PATH and doesn't understand /i, which breaks the launcher
+  # with "find: '/i': No such file or directory". Put System32 first so the
+  # real find.exe is picked up for this call.
+  # --changelog-file must be relative to --search-path: passing the full
+  # absolute path for both (as older Liquibase releases tolerated) makes
+  # 5.x try to resolve the absolute path *within* the search path and fail
+  # with "was not found in the configured search path".
+  PATH="/c/Windows/System32:${PATH}" \
   liquibase \
     --classpath="${driver_jar}" \
     --url="jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}" \
     --username="${DB_USER}" \
     --password="${DB_PASSWORD}" \
-    --changelog-file="${REPO_ROOT}/sprint-08-auth-service/db/changelog/db.changelog-master.xml" \
+    --changelog-file="db.changelog-master.xml" \
     --search-path="${REPO_ROOT}/sprint-08-auth-service/db/changelog" \
     update
 }
@@ -551,8 +706,8 @@ stop_local_services() {
 
 kafka_stop() {
   validate_required_config
-  check_local_dependencies
   configure_java
+  check_local_dependencies
   setup_ssh_wrappers
   verify_ssh_and_remote_docker
 
@@ -650,8 +805,8 @@ print_summary() {
 
 start_all() {
   validate_required_config
-  check_local_dependencies
   configure_java
+  check_local_dependencies
   setup_ssh_wrappers
 
   verify_ssh_and_remote_docker
@@ -673,8 +828,8 @@ start_all() {
 
 show_status() {
   validate_required_config
-  check_local_dependencies
   configure_java
+  check_local_dependencies
   print_summary
 }
 

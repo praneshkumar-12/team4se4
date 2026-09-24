@@ -5,6 +5,10 @@
 target/
 *.class
 
+# run-local.sh runtime state
+.run-local/
+logs/
+
 # IDE
 .idea/
 *.iml
