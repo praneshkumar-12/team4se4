@@ -186,6 +186,8 @@ check_local_dependencies() {
 
 setup_ssh_wrappers() {
   local ssh_opts=(
+    -n
+    -T
     -p "${VM_SSH_PORT}"
     -o StrictHostKeyChecking=accept-new
     -o UserKnownHostsFile="${HOME}/.ssh/known_hosts"
@@ -210,8 +212,14 @@ setup_ssh_wrappers() {
 }
 
 remote_ssh() {
-  local cmd="$1"
-  "${SSH_WRAPPER[@]}" "${VM_USER}@${VM_HOST}" "${cmd}"
+  local cmd="${1:-}"
+  [[ -n "${cmd}" ]] || fail "Internal error: remote_ssh called without a command"
+
+  local escaped_cmd
+  escaped_cmd="$(printf '%q' "${cmd}")"
+
+  # Always execute a concrete remote command in a non-interactive shell.
+  "${SSH_WRAPPER[@]}" "${VM_USER}@${VM_HOST}" "bash -lc ${escaped_cmd}"
 }
 
 remote_scp() {
