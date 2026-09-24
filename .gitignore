@@ -1,5 +1,6 @@
 # Secrets
 .env
+run-local.env
 
 # Java / Maven build output
 target/

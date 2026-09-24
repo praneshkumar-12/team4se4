@@ -169,17 +169,18 @@ Remote Linux VM:
   - Kafka only
 ```
 
-### Configure values at top of script
+### Configure your local settings
 
-Edit these near the top of `run-local.sh` before first run:
+Secrets are not stored in the script. Before the first run:
 
-- `JAVA_HOME` (single hardcoded JDK path, must point to Java 21)
-- `VM_HOST`, `VM_USER`, `VM_PASSWORD`, `VM_SSH_PORT`
-- `KAFKA_VM_PORT` (must stay in `8081-8100`)
-- `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
-- `JWT_SECRET`, `JWT_ISSUER`, `LIQUIBASE_CONTEXTS`
-- `FAUXNANCE_BASE_URL`, `FAUXNANCE_API_KEY`, `POLL_INTERVAL_SECONDS`
-- `RUN_AUTH_SERVICE` (`true` or `false`)
+```bash
+cp run-local.env.example run-local.env   # git-ignored, never commit it
+```
+
+Fill in the required values: `VM_HOST`, `VM_USER`, `VM_PASSWORD`,
+`DB_PASSWORD`, `JWT_SECRET`, `FAUXNANCE_API_KEY`. Other settings (`JAVA_HOME`,
+`DB_*`, `KAFKA_VM_PORT` within `8081-8100`, `RUN_AUTH_SERVICE`, ...) have
+defaults at the top of `run-local.sh` and can be overridden in `run-local.env`.
 
 Kafka bootstrap for local services is automatically set to:
 
