@@ -12,11 +12,8 @@ async function bootstrap(): Promise<void> {
     logger: new RedactingLogger(),
   });
 
-  // The contract's error envelope is the only body a failure is allowed to
-  // carry, so unknown fields and mistyped fields are rejected before a
-  // handler ever runs, not reported later as a 500. errorHttpStatusCode:
-  // 422 so a validation failure lands on VAL-422 (the contract's code),
-  // not Nest's 400 default - PlatformExceptionFilter maps by status.
+  // Reject unknown or mistyped fields before any handler runs. Status is 422
+  // (VAL-422) rather than Nest's default 400.
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -27,12 +24,8 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  // Generated from the @ApiTags/@ApiOperation/@ApiResponse decorators on
-  // AuthController and the @ApiProperty decorators on the DTOs (SEC4-623),
-  // not maintained by hand - the document served here is evidence that the
-  // running code still matches contracts/auth-api.yaml, not a replacement
-  // for it. Two paths, chosen and recorded in this service's README: the
-  // human page at /docs, the JSON document at /docs/json.
+  // OpenAPI document is generated from controller/DTO decorators.
+  // UI at /docs, raw JSON at /docs/json.
   const openApiConfig = new DocumentBuilder()
     .setTitle("Auth service")
     .setDescription("Registration, login, token refresh and current-user lookup for the Enterprise Trading Platform.")
