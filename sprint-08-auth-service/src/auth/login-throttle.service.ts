@@ -6,20 +6,15 @@ interface Window {
 }
 
 /**
- * A fixed-window login throttle, keyed by caller (IP address). Limits how
- * fast an attacker can use the timing/enumeration oracle the uniform
- * failure closes - it does not close an oracle by itself, which is why
- * SEC4-628 builds both.
+ * Fixed-window login throttle keyed by caller IP. Complements the uniform
+ * login failure response by limiting guessing rate.
  *
- * In-memory and per-instance: it does not survive a restart and does not
- * share state across replicas. Acceptable for this training stack; the
- * security review records it as a residual risk rather than a fix, since
- * a shared store (Redis, or a table) is the real fix and out of scope
- * here.
+ * State is in-memory and per-instance, so it resets on restart and is not
+ * shared across replicas. A shared store would be the proper fix.
  */
 @Injectable()
 export class LoginThrottleService {
-  /** Recorded in the sprint README per SEC4-628. */
+  /** Limits are documented in the README. */
   static readonly MAX_ATTEMPTS = 5;
   static readonly COOLDOWN_MS = 5 * 60 * 1000;
 

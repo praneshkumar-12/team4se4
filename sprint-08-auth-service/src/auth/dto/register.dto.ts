@@ -27,13 +27,10 @@ export class RegisterDto {
   @Max(9223372036854775807)
   accountId!: number;
 
-  // Accepted for contract conformance (the schema documents it as a valid,
-  // optional field, so a conforming client sending it must not get
-  // VAL-422) but never read: this is a public, unauthenticated route, and
-  // honouring a self-declared role is the privilege-escalation bug the
-  // contract's own notes call out. AuthService.register always assigns
-  // ["CUSTOMER"] regardless of what, if anything, arrives here.
-  @ApiProperty({ required: false, type: [String], enum: ROLES, description: "Ignored on this public route. See note above." })
+  // Accepted because the API schema allows it, but ignored: honouring a
+  // self-declared role on a public route would allow privilege escalation.
+  // AuthService.register always assigns CUSTOMER.
+  @ApiProperty({ required: false, type: [String], enum: ROLES, description: "Ignored on this public route." })
   @IsOptional()
   @IsArray()
   @IsIn(ROLES, { each: true })

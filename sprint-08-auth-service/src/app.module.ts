@@ -10,10 +10,9 @@ import { PlatformExceptionFilter } from "./common/platform-exception.filter";
 
 @Module({
   imports: [
-    // isGlobal so every module reads config through ConfigService instead
-    // of process.env directly. No envFilePath: in a container the values
-    // come from docker-compose's environment block (root .env), and on a
-    // laptop a developer copies .env.example to .env in this folder.
+    // Global so modules read config via ConfigService, not process.env.
+    // No envFilePath: containers get values from docker-compose; local runs
+    // use a .env copied from .env.example.
     ConfigModule.forRoot({ isGlobal: true }),
     DbModule,
     TokensModule,

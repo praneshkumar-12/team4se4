@@ -25,12 +25,9 @@ export class AuthService {
   ) {}
 
   /**
-   * Creates a user and links it to an existing trading account. Issues no
-   * tokens: an unauthenticated route that mints a session is an
-   * authentication bypass as soon as it has its first defect, so the
-   * client logs in separately. Creates no trading account either -
-   * accounts are owned by the Sprint 3 schema, and registering against an
-   * unknown accountId fails validation (VAL-422), not creates one.
+   * Registers a user against an existing trading account. No tokens are
+   * issued here; the client must log in separately. Accounts are owned by
+   * the database schema, so an unknown accountId is rejected (VAL-422).
    */
   async register(dto: RegisterDto): Promise<UserResponseDto> {
     const passwordHash = await this.passwordHasher.hash(dto.password);
@@ -40,7 +37,7 @@ export class AuthService {
         username: dto.username,
         passwordHash,
         accountId: dto.accountId,
-        // dto.roles is never read here - see the note on RegisterDto.
+        // Roles are never taken from the client (see RegisterDto).
         roles: ["CUSTOMER"],
       });
       this.logger.log({ event: "user_registered", username: user.username, accountId: user.accountId });
@@ -60,20 +57,13 @@ export class AuthService {
   }
 
   /**
-   * An unknown username and a wrong password get the same status, the
-   * same body (PlatformExceptionFilter's single AUTH-401 envelope) and
-   * comparable timing. The throttle answers before either branch does any
-   * hashing, so a caller already over the limit doesn't get the oracle at
-   * all; below the limit, every failure does one argon2id verification -
-   * against the real hash for a known user, against the fixed dummy hash
-   * (same algorithm, same cost) for an unknown one - so an unknown
-   * username costs the same wall-clock time as a wrong password.
+   * Unknown username and wrong password produce the same AUTH-401 response
+   * and take comparable time: an unknown user is verified against a dummy
+   * argon2id hash of the same cost, so timing does not reveal which case
+   * occurred. Throttled callers are rejected before any hashing.
    */
   async login(dto: LoginDto, callerId: string): Promise<TokenResponseDto> {
     if (this.throttle.isThrottled(callerId)) {
-      // No username here: which account someone is failing against is not
-      // information the throttle log needs, and it keeps this line honest
-      // that it's a rate observation, not an authentication attempt.
       this.logger.warn({ event: "login_throttled", callerId });
       throw new UnauthorizedException();
     }
@@ -84,10 +74,7 @@ export class AuthService {
 
     if (!user || !matches) {
       this.throttle.registerFailure(callerId);
-      // Username, not "unknown user" vs "wrong password" - that
-      // distinction is exactly what the uniform-failure response must not
-      // leak, and a log a support engineer can grep is still useful
-      // without it.
+      // Log does not distinguish unknown user from wrong password.
       this.logger.warn({ event: "login_failed", username: dto.username, callerId });
       throw new UnauthorizedException();
     }
@@ -114,7 +101,7 @@ export class AuthService {
     };
   }
 
-  /** Reads identity from the verified token (see JwtAuthGuard), never from a client-supplied parameter. */
+  /** Identity comes from the verified token (JwtAuthGuard), never from client input. */
   async me(verified: VerifiedUser): Promise<UserResponseDto> {
     const user = await this.users.findById(verified.sub);
 

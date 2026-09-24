@@ -15,11 +15,8 @@ export type RequestWithUser = Request & { user: VerifiedUser };
 const BEARER_PREFIX = "Bearer ";
 
 /**
- * Protects a route by verifying the bearer token's signature, algorithm,
- * expiry and issuer - in that order, because jsonwebtoken.verify refuses
- * all four before this method reads a single claim. A guard that decodes
- * first and checks the signature after accepts a tampered payload for as
- * long as it takes to notice.
+ * Verifies the bearer token (signature, algorithm, expiry, issuer) before
+ * any claim is read.
  */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -43,18 +40,13 @@ export class JwtAuthGuard implements CanActivate {
 
     let payload: jwt.JwtPayload;
     try {
-      // algorithms: ["HS256"] pins the algorithm to the one the contract
-      // fixes, so a token asking for "none" or a different algorithm is
-      // refused rather than trusted because *something* looked signed.
+      // Algorithm is pinned to HS256, so "none" or other algorithms are rejected.
       payload = jwt.verify(token, this.secret, {
         algorithms: ["HS256"],
         issuer: this.issuer,
       }) as jwt.JwtPayload;
     } catch {
-      // Expired, tampered, wrongly signed and malformed all land here as
-      // the same JsonWebTokenError/TokenExpiredError family. The contract
-      // wants one AUTH-401 for all of them, so the distinction is not
-      // preserved past this point.
+      // Every token failure maps to a single AUTH-401 response.
       throw new UnauthorizedException();
     }
 
