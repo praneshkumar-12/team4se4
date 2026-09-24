@@ -4,7 +4,9 @@ set -euo pipefail
 # ============================================================================
 # Local Runner (remote Kafka, local everything else)
 # ============================================================================
-# Edit the values in this block for your machine/environment.
+# Secrets and machine-specific values live in run-local.env (git-ignored), not
+# in this script. First time: cp run-local.env.example run-local.env, then
+# fill it in. Anything listed in LOCAL_ENV_KEYS below can be overridden there.
 #
 # JAVA_HOME below is just a hint: if it doesn't point at a valid Java 21
 # install, the script auto-detects one (and installs Temurin 21 via
@@ -14,9 +16,14 @@ set -euo pipefail
 
 JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-21.0.9.10-hotspot"
 
-VM_HOST="10.8.78.168"
-VM_USER="ec2-user"
-VM_PASSWORD="n3u3da!"
+# Required, supplied by run-local.env:
+VM_HOST=""
+VM_USER=""
+VM_PASSWORD=""
+DB_PASSWORD=""
+JWT_SECRET=""
+FAUXNANCE_API_KEY=""
+
 VM_SSH_PORT="22"
 REMOTE_APP_DIR="/opt/team4se4-kafka"
 KAFKA_VM_PORT="8081"
@@ -25,14 +32,11 @@ DB_HOST="localhost"
 DB_PORT="5432"
 DB_NAME="trade_db"
 DB_USER="postgres"
-DB_PASSWORD="n3u3d4!"
 
-JWT_SECRET="dev-only-change-me-this-secret-is-not-for-production-use"
 JWT_ISSUER="auth-service"
 LIQUIBASE_CONTEXTS="demo"
 
 FAUXNANCE_BASE_URL="https://y4t9nq2bqf.execute-api.eu-west-2.amazonaws.com/v1"
-FAUXNANCE_API_KEY="fnx_dev_2ntkvkZIUUuUKXTquhwnQwu26cTB2dLX"
 POLL_INTERVAL_SECONDS="120"
 
 TRADE_API_PORT="8085"
@@ -61,6 +65,49 @@ fail() {
 info() {
   echo "[run-local] $1"
 }
+
+LOCAL_ENV_FILE="${REPO_ROOT}/run-local.env"
+LOCAL_ENV_KEYS=(
+  VM_HOST VM_USER VM_PASSWORD VM_SSH_PORT KAFKA_VM_PORT
+  DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD
+  JWT_SECRET JWT_ISSUER
+  FAUXNANCE_BASE_URL FAUXNANCE_API_KEY POLL_INTERVAL_SECONDS
+  JAVA_HOME RUN_AUTH_SERVICE
+)
+
+# Reads KEY=VALUE lines from run-local.env. Parsed, not `source`d: passwords
+# containing !, $ or spaces are taken literally instead of being executed by
+# the shell. Errors name the offending key, never its value.
+load_local_env() {
+  [[ -f "${LOCAL_ENV_FILE}" ]] || return 0
+
+  local double_quoted='^"(.*)"$'
+  local single_quoted="^'(.*)'\$"
+  local line key value allowed known
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line%$'\r'}"
+    [[ -z "${line//[[:space:]]/}" || "${line}" =~ ^[[:space:]]*# ]] && continue
+    [[ "${line}" == *=* ]] || fail "run-local.env has a line that is not KEY=VALUE."
+
+    key="${line%%=*}"
+    key="${key//[[:space:]]/}"
+    value="${line#*=}"
+    if [[ "${value}" =~ ${double_quoted} || "${value}" =~ ${single_quoted} ]]; then
+      value="${BASH_REMATCH[1]}"
+    fi
+
+    allowed=false
+    for known in "${LOCAL_ENV_KEYS[@]}"; do
+      [[ "${known}" == "${key}" ]] && allowed=true
+    done
+    [[ "${allowed}" == true ]] || fail "Unknown setting '${key}' in run-local.env."
+
+    printf -v "${key}" '%s' "${value}"
+  done < "${LOCAL_ENV_FILE}"
+}
+
+load_local_env
 
 missing_dependency() {
   local tool="$1"
@@ -140,10 +187,18 @@ print_sshpass_install_help() {
   echo "If you prefer key-based SSH, clear VM_PASSWORD and use your SSH key setup."
 }
 
+require_setting() {
+  local name="$1"
+  local value="${!name}"
+  [[ -n "${value}" && "${value}" != CHANGE_ME* ]] \
+    || fail "Set ${name} in run-local.env (first time: cp run-local.env.example run-local.env)."
+}
+
 validate_required_config() {
-  [[ -n "${VM_HOST}" && "${VM_HOST}" != "CHANGE_ME_VM_HOST" ]] || fail "Set VM_HOST near the top of this script."
-  [[ -n "${VM_USER}" && "${VM_USER}" != "CHANGE_ME_VM_USER" ]] || fail "Set VM_USER near the top of this script."
-  [[ -n "${VM_PASSWORD}" && "${VM_PASSWORD}" != "CHANGE_ME_VM_PASSWORD" ]] || fail "Set VM_PASSWORD near the top of this script."
+  local name
+  for name in VM_HOST VM_USER VM_PASSWORD DB_PASSWORD JWT_SECRET FAUXNANCE_API_KEY; do
+    require_setting "${name}"
+  done
 
   if ! [[ "${KAFKA_VM_PORT}" =~ ^[0-9]+$ ]]; then
     fail "KAFKA_VM_PORT must be a number."

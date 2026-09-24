@@ -19,9 +19,26 @@ docker-compose walkthrough this script now replaces for day-to-day local dev.
 
 ## `start` — step by step
 
+### 0. One-time setup: `run-local.env`
+Secrets and machine-specific values are not in the script. Copy the template
+and fill in your own values (the file is git-ignored — never commit it):
+
+```bash
+cp run-local.env.example run-local.env
+```
+
+Required: `VM_HOST`, `VM_USER`, `VM_PASSWORD`, `DB_PASSWORD` (your local
+Postgres password), `JWT_SECRET` (32+ chars, e.g. `openssl rand -hex 32`),
+`FAUXNANCE_API_KEY`. Optional overrides (`JAVA_HOME`, `DB_USER`, `DB_PORT`,
+`KAFKA_VM_PORT`, `RUN_AUTH_SERVICE`, …) are listed at the bottom of the
+template. Format is plain `KEY=VALUE`; values are read literally, so `!`, `$`
+and spaces in a password are fine (no shell quoting needed).
+
 ### 1. Validate configuration
-Checks that `VM_HOST`, `VM_USER`, `VM_PASSWORD` are set (not left as
-placeholders) and that `KAFKA_VM_PORT` is a number in `8081–8100`.
+Loads `run-local.env`, then checks that every required value is set and not
+left as a `CHANGE_ME…` placeholder, and that `KAFKA_VM_PORT` is a number in
+`8081–8100`. A missing or unknown key fails with a message naming the key
+(never the value).
 
 ### 2. Resolve Java 21
 - If the `JAVA_HOME` set at the top of the script doesn't point at a valid
