@@ -90,11 +90,42 @@ services:
       retries: 5
       start_period: 40s
 
+  # Applies the auth service's own Liquibase changelog (SEC4-624's "your
+  # migration or bootstrap") - sprint-08-auth-service/db/changelog/. The
+  # Trade REST API already runs Liquibase for its own schema, internally,
+  # via Spring Boot's Liquibase starter, on its own startup (see the
+  # trade-api service above); this is the equivalent for a service that
+  # isn't a JVM process, run as a one-shot job via the official Liquibase
+  # image instead of a library the app boots with. Waits on trade-api
+  # rather than only on postgres: users.account_id is a foreign key to
+  # accounts(account_id), which only exists once trade-api's own Liquibase
+  # run has built the Sprint 3 schema. Exits after `update` succeeds;
+  # auth-service's depends_on below waits for that exit, not a healthcheck.
+  auth-service-migrate:
+    image: liquibase/liquibase:4.29
+    volumes:
+      - ./sprint-08-auth-service/db/changelog:/liquibase/changelog
+    environment:
+      LIQUIBASE_COMMAND_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-trade_db}
+      LIQUIBASE_COMMAND_USERNAME: ${POSTGRES_USER:-postgres}
+      LIQUIBASE_COMMAND_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      LIQUIBASE_COMMAND_CHANGELOG_FILE: db.changelog-master.xml
+      # The bundled image resolves --changelog-file against /liquibase by
+      # default, not the mounted volume - this points it at
+      # /liquibase/changelog instead. Found by actually running the image
+      # against a throwaway Postgres before writing this file: without it,
+      # Liquibase reports the changelog "not found in the configured
+      # search path" even though the mount itself is correct.
+      LIQUIBASE_SEARCH_PATH: /liquibase/changelog
+    command: ["update"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      trade-api:
+        condition: service_healthy
+
   # Team 4 auth service (Sprint 8, SEC4-622). Reserved on port 3000 by
-  # infra/README.md. Waits on trade-api rather than only on postgres: the
-  # credential store's users/refresh_tokens tables carry a foreign key to
-  # accounts(account_id), which only exists once trade-api's Liquibase run
-  # has built the Sprint 3 schema.
+  # infra/README.md.
   auth-service:
     build:
       # Its own directory as context, unlike trade-api: this service has no
@@ -117,8 +148,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      trade-api:
-        condition: service_healthy
+      auth-service-migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health | grep -q '\"status\":\"up\"'"]
       interval: 15s
