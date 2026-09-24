@@ -201,6 +201,33 @@ VALUES
 );
 
 
+-- US equity instrument.
+-- TCS/INFY aren't in Fauxnance's mock data set (it's US-equity only), so
+-- placing an order against either resolves as REJECTED/NO_PRICE_AVAILABLE
+-- rather than an actual FILLED trade. AAPL is, and is the demo/Postman
+-- flow's instrument of choice for exercising a real fill end to end.
+
+INSERT INTO instruments (
+    isin,
+    ticker,
+    name,
+    type,
+    exchange,
+    is_active,
+    currency
+)
+VALUES
+(
+    'US0378331005',
+    'AAPL',
+    'Apple Inc.',
+    'EQUITY',
+    'NASDAQ',
+    TRUE,
+    'USD'
+);
+
+
 -- ============================================================
 -- 4. ORDERS
 -- ============================================================
