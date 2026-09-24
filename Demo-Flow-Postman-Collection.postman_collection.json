@@ -1,0 +1,230 @@
+{
+  "info": {
+    "_postman_id": "c3a1f0d2-8b6e-4a1a-9f2d-demoflow00001",
+    "name": "Demo Flow — Register, Login, Trade",
+    "description": "One straight-through demo path, in the order to click them in: register a user, log in, check starting balance/holdings, look up a live AAPL quote from Fauxnance, place a BUY order for AAPL, then watch it resolve. No collection/environment variables anywhere — every URL and body is a literal value. Two things need to be copied by hand as you go (noted on each request below):\n\n1. **The access token** — copy the `accessToken` field from the '2 - Login' response into the `Authorization` header of every request after it (they all currently say `Bearer PASTE_ACCESS_TOKEN_HERE`).\n2. **The order price** — request 6 fetches AAPL's live quote; request 7's price (1000.00) is already set comfortably above any realistic ask so the BUY fills, but if you want, check the quote's `ask` field and adjust the price in request 7 to be at or above it (FillRule only fills a BUY when the limit >= ask).\n\n**Prerequisites:**\n- The stack must be running locally: `./run-local.sh start` (trade-api on :8085, auth-service on :3000).\n- Run the requests top to bottom, in order — later ones depend on earlier responses.\n- `accountId: 1` throughout is the seeded ACTIVE demo account (₹100,000 starting cash). A token is only valid for the account it was issued for — using it against account 2 or 3 gets `403 ACC-403`.\n- Re-running '1 - Register' a second time with the same username gets `409` (username taken) — change the username (and re-run login) if you need a fresh run-through. Re-running '7 - Place Order' with the same `idempotencyKey` gets `409 ORD-409` — change `idempotencyKey` for a fresh order.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0 - Sanity check: services are up",
+      "item": [
+        {
+          "name": "0a - trade-api health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8085/actuator/health",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8085",
+              "path": ["actuator", "health"]
+            },
+            "description": "Expect { \"status\": \"UP\", ... }. If this doesn't respond, start the stack first: ./run-local.sh start"
+          }
+        },
+        {
+          "name": "0b - auth-service health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/health",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3000",
+              "path": ["health"]
+            },
+            "description": "Expect { \"status\": \"up\", ... }."
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 - Register",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"demo.trader\",\n  \"password\": \"correct horse battery staple\",\n  \"accountId\": 1\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "http://localhost:3000/auth/register",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["auth", "register"]
+        },
+        "description": "Creates a login (username/password) linked to trade-api's existing account 1 (ACC-10001, ACTIVE, seeded with ₹100,000). This does NOT create a trading account — accountId must already exist in trade-api, which it does for account 1.\n\nExpect 201 with the created user: { id (uuid), username, accountId: 1, roles: [\"CUSTOMER\"], createdOn }.\n\nNo token is issued here — log in next.\n\nIf you've already run this once against the current database, you'll get 409 (username already taken): change \"username\" to something new and proceed."
+      }
+    },
+    {
+      "name": "2 - Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"demo.trader\",\n  \"password\": \"correct horse battery staple\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "http://localhost:3000/auth/login",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["auth", "login"]
+        },
+        "description": "Expect 200 with { accessToken, refreshToken, tokenType: \"Bearer\", expiresIn: 900 }.\n\nCOPY the accessToken value now — paste it in place of PASTE_ACCESS_TOKEN_HERE in every request from here on (their Authorization header reads \"Bearer PASTE_ACCESS_TOKEN_HERE\"). It's a 15-minute token; log in again if it expires mid-demo."
+      }
+    },
+    {
+      "name": "3 - Get my profile (verify token)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer PASTE_ACCESS_TOKEN_HERE" }
+        ],
+        "url": {
+          "raw": "http://localhost:3000/auth/me",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["auth", "me"]
+        },
+        "description": "Optional but a good demo beat: proves the token actually works and shows who it identifies. Expect 200 with { id, username: \"demo.trader\", accountId: 1, roles: [\"CUSTOMER\"], createdOn }."
+      }
+    },
+    {
+      "name": "4 - Get balance (before)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer PASTE_ACCESS_TOKEN_HERE" }
+        ],
+        "url": {
+          "raw": "http://localhost:8085/api/v1/accounts/1/balance",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8085",
+          "path": ["api", "v1", "accounts", "1", "balance"]
+        },
+        "description": "Expect 200 with { accountId: 1, cashBalance, currency: \"INR\", asOf }. Account 1 is seeded with ₹100,000 starting cash, but on a shared/already-used database cashBalance may already be lower from earlier trading activity — note whatever value comes back here and compare it against request 9 after the order fills (it should drop by roughly executedPrice × 5)."
+      }
+    },
+    {
+      "name": "5 - Get holdings (before)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer PASTE_ACCESS_TOKEN_HERE" }
+        ],
+        "url": {
+          "raw": "http://localhost:8085/api/v1/accounts/1/positions",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8085",
+          "path": ["api", "v1", "accounts", "1", "positions"]
+        },
+        "description": "Expect 200 with an array of this account's current holdings. On a fresh seed this is just the seeded TCS position; on a shared/already-used database there may be others too — either way, there should be no AAPL entry yet. Compare against request 10 after the order fills, where an AAPL entry should appear (quantity 5, or +5 if you've run this flow before and already hold some)."
+      }
+    },
+    {
+      "name": "6 - Get AAPL quote (Fauxnance)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "X-Api-Key", "value": "fnx_dev_2ntkvkZIUUuUKXTquhwnQwu26cTB2dLX" }
+        ],
+        "url": {
+          "raw": "https://y4t9nq2bqf.execute-api.eu-west-2.amazonaws.com/v1/quotes/AAPL",
+          "protocol": "https",
+          "host": ["y4t9nq2bqf", "execute-api", "eu-west-2", "amazonaws", "com"],
+          "path": ["v1", "quotes", "AAPL"]
+        },
+        "description": "Direct call to the live Fauxnance sandbox (not through trade-api/executor) — the same source the executor polls for fill pricing. Expect 200 with { data: { symbol: \"AAPL\", price, bid, ask, ... }, meta: {...} }.\n\nNote the \"ask\" value: request 7's BUY only fills if its price is at or above this ask (FillRule). The 1000.00 default in request 7 is comfortably above any realistic AAPL ask, but you can tighten it to just above this response's \"ask\" for a more realistic demo price."
+      }
+    },
+    {
+      "name": "7 - Place order (BUY AAPL)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer PASTE_ACCESS_TOKEN_HERE" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"accountId\": 1,\n  \"symbol\": \"AAPL\",\n  \"side\": \"BUY\",\n  \"quantity\": 5,\n  \"price\": 1000.00,\n  \"idempotencyKey\": \"demo-flow-order-001\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "http://localhost:8085/api/v1/orders",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8085",
+          "path": ["api", "v1", "orders"]
+        },
+        "description": "Expect 200 immediately with status \"NEW\" — the fill/reject decision happens asynchronously (the executor polls Kafka roughly every couple of minutes locally, per POLL_INTERVAL_SECONDS). Wait a bit, then check request 8 to see it resolve to FILLED.\n\nidempotencyKey is a fixed literal (\"demo-flow-order-001\") — change it before re-running this request, or you'll get 409 ORD-409 instead of a fresh order."
+      }
+    },
+    {
+      "name": "8 - Get order history (confirm it resolved)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer PASTE_ACCESS_TOKEN_HERE" }
+        ],
+        "url": {
+          "raw": "http://localhost:8085/api/v1/accounts/1/orders",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8085",
+          "path": ["api", "v1", "accounts", "1", "orders"]
+        },
+        "description": "Expect 200 with an array of this account's orders, newest included. Look for idempotencyKey \"demo-flow-order-001\" — status should have moved from NEW to FILLED (or REJECTED/NO_PRICE_AVAILABLE if Fauxnance couldn't price it). Re-run this request a few times a bit apart if it's still NEW — the executor's poll interval means the fill isn't instant."
+      }
+    },
+    {
+      "name": "9 - Get balance (after fill)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer PASTE_ACCESS_TOKEN_HERE" }
+        ],
+        "url": {
+          "raw": "http://localhost:8085/api/v1/accounts/1/balance",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8085",
+          "path": ["api", "v1", "accounts", "1", "balance"]
+        },
+        "description": "Compare against request 4: cashBalance should have dropped by (executed_price × 5), matching the fill seen in request 8."
+      }
+    },
+    {
+      "name": "10 - Get holdings (after fill)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer PASTE_ACCESS_TOKEN_HERE" }
+        ],
+        "url": {
+          "raw": "http://localhost:8085/api/v1/accounts/1/positions",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8085",
+          "path": ["api", "v1", "accounts", "1", "positions"]
+        },
+        "description": "Compare against request 5: should now show { accountId: 1, symbol: \"AAPL\", quantity: 5, averageCost }, closing out the demo."
+      }
+    }
+  ]
+}
