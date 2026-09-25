@@ -4,6 +4,8 @@ import type { Response } from "express";
 interface ErrorEnvelope {
   errorCode: "AUTH-401" | "AUTH-409" | "VAL-422";
   message: string;
+  /** Present on VAL-422 only: every validation failure, reported together. */
+  errors?: string[];
 }
 
 /**
@@ -31,8 +33,18 @@ export class PlatformExceptionFilter implements ExceptionFilter {
       this.logger.error(exception.message, exception.stack);
     }
 
-    response.status(status).json(envelope);
+    const errors = validationMessages(exception);
+    response.status(status).json(errors ? { ...envelope, errors } : envelope);
   }
+}
+
+function validationMessages(exception: HttpException): string[] | null {
+  if (exception.getStatus() !== HttpStatus.UNPROCESSABLE_ENTITY) {
+    return null;
+  }
+  const body = exception.getResponse();
+  const errors = typeof body === "object" ? (body as { errors?: unknown }).errors : undefined;
+  return Array.isArray(errors) && errors.length > 0 ? (errors as string[]) : null;
 }
 
 function toEnvelope(status: number): ErrorEnvelope | null {

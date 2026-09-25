@@ -50,7 +50,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"username\": \"demo.trader\",\n  \"password\": \"correct horse battery staple\",\n  \"accountId\": 1\n}",
+          "raw": "{\n  \"username\": \"demo.trader\",\n  \"password\": \"Correct-Horse-Battery-9\",\n  \"accountId\": 1\n}",
           "options": { "raw": { "language": "json" } }
         },
         "url": {
@@ -72,7 +72,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"username\": \"demo.trader\",\n  \"password\": \"correct horse battery staple\"\n}",
+          "raw": "{\n  \"username\": \"demo.trader\",\n  \"password\": \"Correct-Horse-Battery-9\"\n}",
           "options": { "raw": { "language": "json" } }
         },
         "url": {

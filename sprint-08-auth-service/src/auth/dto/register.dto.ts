@@ -1,5 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { IsArray, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from "class-validator";
+import { PasswordComplexity } from "./password-rules";
 import { ROLES } from "./role";
 
 export class RegisterDto {
@@ -13,12 +14,13 @@ export class RegisterDto {
   @ApiProperty({
     minLength: 12,
     maxLength: 128,
-    description: "Twelve characters minimum. Length beats character-class rules.",
-    example: "correct horse battery staple",
+    description: "12-128 characters, with at least one uppercase letter, lowercase letter, digit and symbol.",
+    example: "Correct-Horse-Battery-9",
   })
   @IsString()
   @MinLength(12)
   @MaxLength(128)
+  @PasswordComplexity()
   password!: string;
 
   @ApiProperty({ type: Number, minimum: 1, description: "The numeric trading account key, ACCOUNTS.account_id.", example: 1 })

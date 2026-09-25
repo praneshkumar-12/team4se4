@@ -7,7 +7,7 @@ export class LoginDto {
   @MaxLength(64)
   username!: string;
 
-  @ApiProperty({ maxLength: 128, example: "correct horse battery staple" })
+  @ApiProperty({ maxLength: 128, example: "Correct-Horse-Battery-9" })
   @IsString()
   @MaxLength(128)
   password!: string;

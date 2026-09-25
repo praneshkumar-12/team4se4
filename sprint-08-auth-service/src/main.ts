@@ -5,6 +5,7 @@ import { ConfigService } from "@nestjs/config";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
 import { RedactingLogger } from "./common/logger";
+import { toValidationMessages } from "./common/validation-errors";
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
@@ -13,14 +14,15 @@ async function bootstrap(): Promise<void> {
   });
 
   // Reject unknown or mistyped fields before any handler runs. Status is 422
-  // (VAL-422) rather than Nest's default 400.
+  // (VAL-422) rather than Nest's default 400, and every failure is reported
+  // together in one response.
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
       errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY,
-      exceptionFactory: () => new UnprocessableEntityException(),
+      exceptionFactory: (errors) => new UnprocessableEntityException({ errors: toValidationMessages(errors) }),
     }),
   );
 
