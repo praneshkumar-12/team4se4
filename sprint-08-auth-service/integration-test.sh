@@ -21,7 +21,7 @@ AUTH_BASE="${1:-http://localhost:3000}"
 TRADE_BASE="${2:-http://localhost:8085}"
 ACCOUNT_ID=1
 USERNAME="integration-test-$(date +%s)"
-PASSWORD="correct horse battery staple"
+PASSWORD="Correct-Horse-Battery-9"
 
 fail() {
   echo "FAIL: $1" >&2

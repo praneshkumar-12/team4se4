@@ -1,12 +1,9 @@
 import { ConsoleLogger, LoggerService } from "@nestjs/common";
 
 /**
- * Keys redacted at any depth, regardless of casing. This is the structural
- * defence the ticket asks for: not a search for a log call that names a
- * credential field (which catches the direct case and none of the
- * indirect ones - an error object serialised whole, a DTO printed in a
- * stack trace), but a redaction pass every value goes through on the way
- * out, however it got there.
+ * Keys redacted at any depth, case-insensitively. Redaction is applied to
+ * every logged value rather than by auditing call sites, so credentials
+ * are also caught inside serialised errors and DTOs.
  */
 const REDACTED_KEYS = new Set(["password", "passwordhash", "accesstoken", "refreshtoken", "authorization", "token"]);
 
@@ -18,9 +15,7 @@ export function redact(value: unknown, seen = new WeakSet<object>()): unknown {
   }
 
   if (value instanceof Error) {
-    // Serialising an Error whole is exactly the indirect route the ticket
-    // names, so its own enumerable properties (which can carry a request
-    // body a framework attached) get the same treatment as a plain object.
+    // Enumerable properties may carry request data attached by the framework.
     return redact({ ...value, name: value.name, message: value.message }, seen);
   }
 
@@ -40,13 +35,7 @@ export function redact(value: unknown, seen = new WeakSet<object>()): unknown {
   return value;
 }
 
-/**
- * The one logger every part of this service is expected to log through.
- * No caller ever hands it a whole request body - only named, already-safe
- * fields (e.g. a username) - but the redaction pass exists anyway, because
- * "no caller ever does X" is a rule about today's code, not a guarantee
- * about tomorrow's.
- */
+/** Application logger; redacts sensitive keys from all output as a safeguard against future misuse. */
 export class RedactingLogger extends ConsoleLogger implements LoggerService {
   log(message: unknown, ...optionalParams: unknown[]): void {
     super.log(redact(message), ...optionalParams.map((p) => redact(p)));

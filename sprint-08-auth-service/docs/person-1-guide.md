@@ -91,5 +91,5 @@ the repo root `RUNBOOK.md` for the full stack):
 
 ```bash
 curl -X POST http://localhost:3000/auth/register -H 'Content-Type: application/json' \
-  -d '{"username":"priya.menon","password":"correct horse battery staple","accountId":1}'
+  -d '{"username":"priya.menon","password":"Correct-Horse-Battery-9","accountId":1}'
 ```

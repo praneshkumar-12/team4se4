@@ -4,17 +4,15 @@ import type { Response } from "express";
 interface ErrorEnvelope {
   errorCode: "AUTH-401" | "AUTH-409" | "VAL-422";
   message: string;
+  /** Present on VAL-422 only: every validation failure, reported together. */
+  errors?: string[];
 }
 
 /**
- * Every failure this service returns leaves in the platform envelope,
- * {"errorCode": ..., "message": ...}, and nothing else - matching the
- * Trade REST API's GlobalExceptionHandler and giving Sprint 9's UI one
- * error handler for the whole platform. Mapped by HTTP status, not by
- * exception class: any handler that throws UnauthorizedException,
- * ConflictException or a 422 gets the right envelope without importing a
- * shared exception type, which is what keeps the guard (SEC4-626) and the
- * controller (SEC4-623) free to be built independently.
+ * Returns every failure in the platform envelope {"errorCode", "message"},
+ * consistent with the Trade REST API's GlobalExceptionHandler. Mapping is
+ * by HTTP status rather than exception class, so the guard and controller
+ * need no shared exception type.
  */
 @Catch(HttpException)
 export class PlatformExceptionFilter implements ExceptionFilter {
@@ -26,9 +24,7 @@ export class PlatformExceptionFilter implements ExceptionFilter {
     const envelope = toEnvelope(status);
 
     if (!envelope) {
-      // Outside the four contract status codes (a route this service
-      // doesn't expose, for instance): fall back to Nest's default shape
-      // rather than inventing a fifth errorCode the contract never fixed.
+      // Unmapped status: keep Nest's default body instead of inventing an error code.
       response.status(status).json(exception.getResponse());
       return;
     }
@@ -37,8 +33,18 @@ export class PlatformExceptionFilter implements ExceptionFilter {
       this.logger.error(exception.message, exception.stack);
     }
 
-    response.status(status).json(envelope);
+    const errors = validationMessages(exception);
+    response.status(status).json(errors ? { ...envelope, errors } : envelope);
   }
+}
+
+function validationMessages(exception: HttpException): string[] | null {
+  if (exception.getStatus() !== HttpStatus.UNPROCESSABLE_ENTITY) {
+    return null;
+  }
+  const body = exception.getResponse();
+  const errors = typeof body === "object" ? (body as { errors?: unknown }).errors : undefined;
+  return Array.isArray(errors) && errors.length > 0 ? (errors as string[]) : null;
 }
 
 function toEnvelope(status: number): ErrorEnvelope | null {

@@ -33,6 +33,13 @@ describe("PlatformExceptionFilter", () => {
     expect(json).toHaveBeenCalledWith({ errorCode: "VAL-422", message: "Invalid input" });
   });
 
+  it("includes every validation message on a 422 that carries them", () => {
+    const { host, json } = mockHost();
+    const errors = ["password must contain at least one digit", "password must contain at least one symbol"];
+    filter.catch(new UnprocessableEntityException({ errors }), host);
+    expect(json).toHaveBeenCalledWith({ errorCode: "VAL-422", message: "Invalid input", errors });
+  });
+
   it("carries no field beyond errorCode and message", () => {
     const { host, json } = mockHost();
     filter.catch(new UnauthorizedException(), host);

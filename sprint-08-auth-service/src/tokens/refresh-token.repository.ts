@@ -9,10 +9,7 @@ export interface RefreshTokenRow {
   expiresAt: Date;
 }
 
-/**
- * Every statement here is parameterised ($1, $2, ...). None is ever built
- * by concatenating a caller-supplied value into the SQL text.
- */
+/** All queries are parameterised. */
 @Injectable()
 export class RefreshTokenRepository {
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
