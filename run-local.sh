@@ -53,7 +53,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${REPO_ROOT}"
 
 OS_NAME="$(uname -s)"
-REMOTE_COMPOSE_CMD=""
+REMOTE_COMPOSE_FLAVOR=""
 SSH_WRAPPER=()
 SCP_WRAPPER=()
 
@@ -389,7 +389,9 @@ remote_ssh() {
   local attempts=5
   local attempt rc
   for ((attempt = 1; attempt <= attempts; attempt++)); do
-    timeout 25 "${SSH_WRAPPER[@]}" "${VM_USER}@${VM_HOST}" "bash -ls" <<< "${cmd}"
+    # Use a clean non-login shell so noisy profile scripts on the VM cannot
+    # pollute command output or emit control sequences.
+    timeout 25 "${SSH_WRAPPER[@]}" "${VM_USER}@${VM_HOST}" "bash --noprofile --norc -s" <<< "${cmd}"
     rc=$?
     if [[ "${rc}" -ne 124 ]]; then
       return "${rc}"
@@ -403,16 +405,26 @@ remote_scp() {
   local src="$1"
   local dest="$2"
 
+  [[ -f "${src}" ]] || fail "Missing local file for remote copy: ${src}"
+
+  # Stream files over SSH instead of relying on scp protocol. This avoids
+  # protocol corruption when a remote shell profile writes unexpected output.
+  local eof_marker="RUN_LOCAL_FILE_EOF_$(date +%s)_$$"
+
   # Same flaky-sshpass timeout/retry treatment as remote_ssh.
   local attempts=5
   local attempt rc
   for ((attempt = 1; attempt <= attempts; attempt++)); do
-    timeout 25 "${SCP_WRAPPER[@]}" "${src}" "${VM_USER}@${VM_HOST}:${dest}"
+    {
+      printf "cat > %q <<'%s'\n" "${dest}" "${eof_marker}"
+      cat "${src}"
+      printf "\n%s\n" "${eof_marker}"
+    } | timeout 25 "${SSH_WRAPPER[@]}" "${VM_USER}@${VM_HOST}" "bash --noprofile --norc -s"
     rc=$?
     if [[ "${rc}" -ne 124 ]]; then
       return "${rc}"
     fi
-    info "Remote SCP timed out (attempt ${attempt}/${attempts}, likely a flaky sshpass hang) — retrying" >&2
+    info "Remote copy timed out (attempt ${attempt}/${attempts}, likely a flaky sshpass hang) — retrying" >&2
   done
   return 124
 }
@@ -424,7 +436,21 @@ verify_ssh_and_remote_docker() {
   info "Checking remote Docker availability"
   remote_ssh "docker info >/dev/null 2>&1" || fail "Remote Docker unavailable"
 
-  REMOTE_COMPOSE_CMD="$(remote_ssh 'if docker compose version >/dev/null 2>&1; then echo "docker compose"; elif command -v docker-compose >/dev/null 2>&1; then echo "docker-compose"; else exit 7; fi')" || fail "Remote Docker Compose unavailable"
+  local detected_compose
+  detected_compose="$(remote_ssh 'if docker compose version >/dev/null 2>&1; then echo docker_compose_plugin; elif command -v docker-compose >/dev/null 2>&1; then echo docker_compose_legacy; else exit 7; fi')" || fail "Remote Docker Compose unavailable"
+
+  # Defensive cleanup: Windows ssh/terminal hops can inject CR/LF bytes.
+  detected_compose="${detected_compose//$'\r'/}"
+  detected_compose="${detected_compose//$'\n'/}"
+  detected_compose="$(printf '%s' "${detected_compose}" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+
+  if [[ "${detected_compose}" == *"docker_compose_plugin"* ]]; then
+    REMOTE_COMPOSE_FLAVOR="docker_compose_plugin"
+  elif [[ "${detected_compose}" == *"docker_compose_legacy"* ]]; then
+    REMOTE_COMPOSE_FLAVOR="docker_compose_legacy"
+  else
+    fail "Remote Docker Compose detection returned an unexpected value: '${detected_compose}'."
+  fi
 }
 
 create_remote_kafka_override() {
@@ -463,7 +489,20 @@ copy_kafka_files_to_vm() {
 
 remote_compose() {
   local compose_args="$1"
-  remote_ssh "cd '${REMOTE_APP_DIR}' && ${REMOTE_COMPOSE_CMD} -f docker-compose.yml -f docker-compose.kafka-remote.override.yml ${compose_args}"
+  local compose_cmd
+  case "${REMOTE_COMPOSE_FLAVOR}" in
+    docker_compose_plugin)
+      compose_cmd="docker compose"
+      ;;
+    docker_compose_legacy)
+      compose_cmd="docker-compose"
+      ;;
+    *)
+      fail "Internal error: remote compose flavor is not set."
+      ;;
+  esac
+
+  remote_ssh "cd '${REMOTE_APP_DIR}' && ${compose_cmd} -f docker-compose.yml -f docker-compose.kafka-remote.override.yml ${compose_args}"
 }
 
 wait_for_remote_kafka() {
@@ -573,7 +612,24 @@ build_projects() {
 
   if [[ "${RUN_AUTH_SERVICE}" == "true" ]]; then
     info "Installing and building sprint-08-auth-service"
-    npm --prefix sprint-08-auth-service ci
+
+    local npm_attempts=3
+    local npm_attempt
+    for ((npm_attempt=1; npm_attempt<=npm_attempts; npm_attempt++)); do
+      if npm --prefix sprint-08-auth-service ci; then
+        break
+      fi
+
+      if (( npm_attempt < npm_attempts )); then
+        info "auth-service npm ci failed (attempt ${npm_attempt}/${npm_attempts}); retrying after cleanup"
+        rm -rf sprint-08-auth-service/node_modules/argon2/prebuilds/win32-x64 2>/dev/null || true
+        rm -rf sprint-08-auth-service/node_modules/.package-lock 2>/dev/null || true
+        sleep 2
+      else
+        fail "auth-service dependency install failed (npm ci). Ensure no process is locking sprint-08-auth-service/node_modules and retry."
+      fi
+    done
+
     npm --prefix sprint-08-auth-service run build
   fi
 }
@@ -593,6 +649,49 @@ wait_for_http_contains() {
   done
 
   return 1
+}
+
+find_listening_pids() {
+  local port="$1"
+
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null | sort -u
+    return
+  fi
+
+  if command -v netstat >/dev/null 2>&1; then
+    netstat -ano 2>/dev/null \
+      | tr -d '\r' \
+      | awk -v port=":${port}" '$1 == "TCP" && $2 ~ port "$" && $4 == "LISTENING" {print $5}' \
+      | sort -u
+    return
+  fi
+}
+
+stop_pid_cross_platform() {
+  local pid="$1"
+
+  kill "${pid}" >/dev/null 2>&1 || true
+  sleep 1
+
+  if command -v taskkill >/dev/null 2>&1; then
+    taskkill //PID "${pid}" //T //F >/dev/null 2>&1 || true
+  fi
+}
+
+ensure_port_free() {
+  local service_name="$1"
+  local port="$2"
+  local pids pid
+
+  pids="$(find_listening_pids "${port}" || true)"
+  [[ -n "${pids}" ]] || return 0
+
+  info "Port ${port} is already in use; stopping existing listener(s) before starting ${service_name}"
+  while IFS= read -r pid; do
+    [[ -n "${pid}" ]] || continue
+    stop_pid_cross_platform "${pid}"
+  done <<< "${pids}"
 }
 
 load_pids() {
@@ -618,6 +717,7 @@ EOF
 start_trade_api() {
   info "Starting trade-api on localhost:${TRADE_API_PORT}"
   mkdir -p "${LOG_DIR}"
+  ensure_port_free "trade-api" "${TRADE_API_PORT}"
 
   DB_URL="jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}" \
   DB_USER="${DB_USER}" \
@@ -633,6 +733,11 @@ start_trade_api() {
   save_pids
 
   if ! wait_for_http_contains "http://localhost:${TRADE_API_PORT}/actuator/health" '"status":"UP"' 90; then
+    tail -n 120 "${LOG_DIR}/trade-api.log" || true
+    fail "Service failed to start: trade-api"
+  fi
+
+  if ! kill -0 "${TRADE_API_PID}" >/dev/null 2>&1; then
     tail -n 120 "${LOG_DIR}/trade-api.log" || true
     fail "Service failed to start: trade-api"
   fi
@@ -677,6 +782,7 @@ start_auth_service() {
   fi
 
   info "Starting auth-service on localhost:${AUTH_SERVICE_PORT}"
+  ensure_port_free "auth-service" "${AUTH_SERVICE_PORT}"
 
   PORT="${AUTH_SERVICE_PORT}" \
   DB_HOST="${DB_HOST}" \
@@ -686,12 +792,17 @@ start_auth_service() {
   DB_PASSWORD="${DB_PASSWORD}" \
   JWT_SECRET="${JWT_SECRET}" \
   JWT_ISSUER="${JWT_ISSUER}" \
-  nohup npm --prefix sprint-08-auth-service run start > "${LOG_DIR}/auth-service.log" 2>&1 &
+  nohup node sprint-08-auth-service/dist/main.js > "${LOG_DIR}/auth-service.log" 2>&1 &
 
   AUTH_SERVICE_PID=$!
   save_pids
 
   if ! wait_for_http_contains "http://localhost:${AUTH_SERVICE_PORT}/health" '"status":"up"' 60; then
+    tail -n 120 "${LOG_DIR}/auth-service.log" || true
+    fail "Service failed to start: auth-service"
+  fi
+
+  if ! kill -0 "${AUTH_SERVICE_PID}" >/dev/null 2>&1; then
     tail -n 120 "${LOG_DIR}/auth-service.log" || true
     fail "Service failed to start: auth-service"
   fi
@@ -870,9 +981,9 @@ start_all() {
   start_remote_kafka
 
   ensure_local_database
+  stop_local_services
   build_projects
 
-  stop_local_services
   start_trade_api
   run_auth_liquibase
   start_auth_service
