@@ -51,4 +51,17 @@
                  endDelimiter=";"/>
     </changeSet>
 
+    <changeSet id="003-users-account-unique" author="team4">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT count(*) FROM information_schema.table_constraints
+                WHERE table_name = 'users' AND constraint_name = 'uq_users_account_id'
+            </sqlCheck>
+        </preConditions>
+        <sqlFile path="changes/003-users-account-unique.sql"
+                 relativeToChangelogFile="true"
+                 splitStatements="true"
+                 endDelimiter=";"/>
+    </changeSet>
+
 </databaseChangeLog>
