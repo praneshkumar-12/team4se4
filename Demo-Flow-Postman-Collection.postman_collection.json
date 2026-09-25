@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "c3a1f0d2-8b6e-4a1a-9f2d-demoflow00001",
     "name": "Demo Flow — Register, Login, Trade",
-    "description": "One straight-through demo path, in the order to click them in: register a user, log in, check starting balance/holdings, look up a live AAPL quote from Fauxnance, place a BUY order for AAPL, then watch it resolve. No collection/environment variables anywhere — every URL and body is a literal value. Two things need to be copied by hand as you go (noted on each request below):\n\n1. **The access token** — copy the `accessToken` field from the '2 - Login' response into the `Authorization` header of every request after it (they all currently say `Bearer PASTE_ACCESS_TOKEN_HERE`).\n2. **The order price** — request 6 fetches AAPL's live quote; request 7's price (1000.00) is already set comfortably above any realistic ask so the BUY fills, but if you want, check the quote's `ask` field and adjust the price in request 7 to be at or above it (FillRule only fills a BUY when the limit >= ask).\n\n**Prerequisites:**\n- The stack must be running locally: `./run-local.sh start` (trade-api on :8085, auth-service on :3000).\n- Run the requests top to bottom, in order — later ones depend on earlier responses.\n- `accountId: 1` throughout is the seeded ACTIVE demo account (₹100,000 starting cash). A token is only valid for the account it was issued for — using it against account 2 or 3 gets `403 ACC-403`.\n- Re-running '1 - Register' a second time with the same username gets `409` (username taken) — change the username (and re-run login) if you need a fresh run-through. Re-running '7 - Place Order' with the same `idempotencyKey` gets `409 ORD-409` — change `idempotencyKey` for a fresh order.",
+    "description": "One straight-through demo path, in the order to click them in: register a user, log in, check starting balance/holdings, look up a live AAPL quote from Fauxnance, place a BUY order for AAPL, then watch it resolve. No collection/environment variables anywhere — every URL and body is a literal value. Two things need to be copied by hand as you go (noted on each request below):\n\n1. **The access token** — copy the `accessToken` field from the '2 - Login' response into the `Authorization` header of every request after it (they all currently say `Bearer PASTE_ACCESS_TOKEN_HERE`).\n2. **The order price** — request 6 fetches AAPL's live quote; request 7's price (1000.00) is already set comfortably above any realistic ask so the BUY fills, but if you want, check the quote's `ask` field and adjust the price in request 7 to be at or above it (FillRule only fills a BUY when the limit >= ask).\n\n**Prerequisites:**\n- The stack must be running locally: `./run-local.sh start` (trade-api on :8085, auth-service on :3000).\n- Run the requests top to bottom, in order — later ones depend on earlier responses.\n- Registration takes only an email + password now — no accountId. The email must match an existing seeded client (`clients.email`); the account to link is inferred from it via `accounts.client_id`. `arun.kumar@example.com` is the seeded client for account 1 (ACC-10001, ACTIVE, ₹100,000 starting cash) — the only seeded account that's actually ACTIVE and tradeable, so it's what every request below uses.\n- A token is only valid for the account it was issued for — using it against account 2 or 3 gets `403 ACC-403`.\n- Each account can only have one registered user (`users.account_id` is UNIQUE). Re-running '1 - Register' against an email whose account is already registered gets `409` (already registered) — that's fine, just skip to '2 - Login' with the same credentials. Registering an email with no matching client at all gets `404`. Re-running '7 - Place Order' with the same `idempotencyKey` gets `409 ORD-409` — change `idempotencyKey` for a fresh order.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -50,7 +50,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"username\": \"demo.trader\",\n  \"password\": \"Correct-Horse-Battery-9\",\n  \"accountId\": 1\n}",
+          "raw": "{\n  \"email\": \"arun.kumar@example.com\",\n  \"password\": \"Correct-Horse-Battery-9\"\n}",
           "options": { "raw": { "language": "json" } }
         },
         "url": {
@@ -60,7 +60,7 @@
           "port": "3000",
           "path": ["auth", "register"]
         },
-        "description": "Creates a login (username/password) linked to trade-api's existing account 1 (ACC-10001, ACTIVE, seeded with ₹100,000). This does NOT create a trading account — accountId must already exist in trade-api, which it does for account 1.\n\nExpect 201 with the created user: { id (uuid), username, accountId: 1, roles: [\"CUSTOMER\"], createdOn }.\n\nNo token is issued here — log in next.\n\nIf you've already run this once against the current database, you'll get 409 (username already taken): change \"username\" to something new and proceed."
+        "description": "Creates a login (email/password) linked to whichever trading account belongs to the client with this email — trade-api's existing account 1 (ACC-10001, ACTIVE, seeded with ₹100,000) for arun.kumar@example.com. This does NOT create a client or account; the email must already exist in trade-api's clients table (it does, via the demo seed).\n\nExpect 201 with the created user: { id (uuid), username (holds the email), accountId: 1, roles: [\"CUSTOMER\"], createdOn }.\n\nNo token is issued here — log in next.\n\nIf this account already has a registered user (e.g. you've run this before against the current database), you'll get 409 — that's fine, skip straight to '2 - Login' with the same credentials. An email with no matching client at all gets 404."
       }
     },
     {
@@ -72,7 +72,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"username\": \"demo.trader\",\n  \"password\": \"Correct-Horse-Battery-9\"\n}",
+          "raw": "{\n  \"email\": \"arun.kumar@example.com\",\n  \"password\": \"Correct-Horse-Battery-9\"\n}",
           "options": { "raw": { "language": "json" } }
         },
         "url": {
@@ -99,7 +99,7 @@
           "port": "3000",
           "path": ["auth", "me"]
         },
-        "description": "Optional but a good demo beat: proves the token actually works and shows who it identifies. Expect 200 with { id, username: \"demo.trader\", accountId: 1, roles: [\"CUSTOMER\"], createdOn }."
+        "description": "Optional but a good demo beat: proves the token actually works and shows who it identifies. Expect 200 with { id, username: \"arun.kumar@example.com\" (holds the registration email), accountId: 1, roles: [\"CUSTOMER\"], createdOn }."
       }
     },
     {
