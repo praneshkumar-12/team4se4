@@ -1,17 +1,19 @@
-import { ConflictException, UnauthorizedException, UnprocessableEntityException } from "@nestjs/common";
+import { ConflictException, NotFoundException, UnauthorizedException, UnprocessableEntityException } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { UsersRepository, UserRecord } from "../users/users.repository";
+import { AccountLookupRepository } from "../users/account-lookup.repository";
 import { PasswordHasher, getDummyPasswordHash } from "../users/password-hasher";
 import { TokenService } from "../tokens/token.service";
 import { RefreshTokenService } from "../tokens/refresh-token.service";
 import { LoginThrottleService } from "./login-throttle.service";
 
 const CALLER_IP = "203.0.113.1";
+const EMAIL = "arun.kumar@example.com";
 
 function buildUser(overrides: Partial<UserRecord> = {}): UserRecord {
   return {
     id: "8f14e45f-ceea-4c1b-9d3b-1a2b3c4d5e6f",
-    username: "priya.menon",
+    username: EMAIL,
     passwordHash: "$argon2id$fake",
     accountId: 1,
     roles: ["CUSTOMER"],
@@ -26,6 +28,10 @@ function buildService() {
     findByUsername: jest.fn(),
     findById: jest.fn(),
   } as unknown as jest.Mocked<UsersRepository>;
+
+  const accountLookup = {
+    findAccountIdByEmail: jest.fn().mockResolvedValue(1),
+  } as unknown as jest.Mocked<AccountLookupRepository>;
 
   const passwordHasher = {
     hash: jest.fn().mockResolvedValue("$argon2id$fake"),
@@ -43,17 +49,30 @@ function buildService() {
 
   const throttle = new LoginThrottleService();
 
-  const service = new AuthService(users, passwordHasher, tokenService, refreshTokens, throttle);
-  return { service, users, passwordHasher, tokenService, refreshTokens, throttle };
+  const service = new AuthService(users, accountLookup, passwordHasher, tokenService, refreshTokens, throttle);
+  return { service, users, accountLookup, passwordHasher, tokenService, refreshTokens, throttle };
 }
 
 describe("AuthService", () => {
   describe("register", () => {
+    it("looks up the account by email and creates a user linked to it", async () => {
+      const { service, users, accountLookup } = buildService();
+      accountLookup.findAccountIdByEmail.mockResolvedValue(42);
+      users.create.mockResolvedValue(buildUser({ accountId: 42 }));
+
+      await service.register({ email: EMAIL, password: "Correct-Horse-Battery-9" });
+
+      expect(accountLookup.findAccountIdByEmail).toHaveBeenCalledWith(EMAIL);
+      expect(users.create).toHaveBeenCalledWith(
+        expect.objectContaining({ username: EMAIL, accountId: 42, roles: ["CUSTOMER"] }),
+      );
+    });
+
     it("creates a user with CUSTOMER regardless of a caller-supplied roles field", async () => {
       const { service, users } = buildService();
       users.create.mockResolvedValue(buildUser());
 
-      await service.register({ username: "priya.menon", password: "correct horse battery staple", accountId: 1, roles: ["ADMIN"] });
+      await service.register({ email: EMAIL, password: "Correct-Horse-Battery-9", roles: ["ADMIN"] });
 
       expect(users.create).toHaveBeenCalledWith(expect.objectContaining({ roles: ["CUSTOMER"] }));
     });
@@ -62,27 +81,37 @@ describe("AuthService", () => {
       const { service, users } = buildService();
       users.create.mockResolvedValue(buildUser());
 
-      const result = await service.register({ username: "priya.menon", password: "correct horse battery staple", accountId: 1 });
+      const result = await service.register({ email: EMAIL, password: "Correct-Horse-Battery-9" });
 
       expect(result).not.toHaveProperty("accessToken");
       expect(result).not.toHaveProperty("refreshToken");
     });
 
-    it("maps a duplicate username to AUTH-409 (ConflictException)", async () => {
+    it("rejects an email with no matching client with AUTH-404 (NotFoundException), without touching the users table", async () => {
+      const { service, users, accountLookup } = buildService();
+      accountLookup.findAccountIdByEmail.mockResolvedValue(null);
+
+      await expect(
+        service.register({ email: "nobody@example.com", password: "Correct-Horse-Battery-9" }),
+      ).rejects.toThrow(NotFoundException);
+      expect(users.create).not.toHaveBeenCalled();
+    });
+
+    it("maps a duplicate registration (email or account already taken) to AUTH-409 (ConflictException)", async () => {
       const { service, users } = buildService();
       users.create.mockRejectedValue({ code: "23505" });
 
       await expect(
-        service.register({ username: "priya.menon", password: "correct horse battery staple", accountId: 1 }),
+        service.register({ email: EMAIL, password: "Correct-Horse-Battery-9" }),
       ).rejects.toThrow(ConflictException);
     });
 
-    it("maps an unknown accountId to VAL-422 (UnprocessableEntityException)", async () => {
+    it("maps the account disappearing between lookup and insert to VAL-422 (UnprocessableEntityException)", async () => {
       const { service, users } = buildService();
       users.create.mockRejectedValue({ code: "23503" });
 
       await expect(
-        service.register({ username: "priya.menon", password: "correct horse battery staple", accountId: 999 }),
+        service.register({ email: EMAIL, password: "Correct-Horse-Battery-9" }),
       ).rejects.toThrow(UnprocessableEntityException);
     });
   });
@@ -93,8 +122,9 @@ describe("AuthService", () => {
       users.findByUsername.mockResolvedValue(buildUser());
       passwordHasher.verify.mockResolvedValue(true);
 
-      const result = await service.login({ username: "priya.menon", password: "correct horse battery staple" }, CALLER_IP);
+      const result = await service.login({ email: EMAIL, password: "correct horse battery staple" }, CALLER_IP);
 
+      expect(users.findByUsername).toHaveBeenCalledWith(EMAIL);
       expect(result.accessToken).toBe("signed.access.token");
       expect(result.refreshToken).toBe("issued-refresh-token");
       expect(result.tokenType).toBe("Bearer");
@@ -106,7 +136,7 @@ describe("AuthService", () => {
       users.findByUsername.mockResolvedValue(buildUser());
       passwordHasher.verify.mockResolvedValue(false);
 
-      await expect(service.login({ username: "priya.menon", password: "wrong" }, CALLER_IP)).rejects.toThrow(
+      await expect(service.login({ email: EMAIL, password: "wrong" }, CALLER_IP)).rejects.toThrow(
         UnauthorizedException,
       );
     });
@@ -115,7 +145,7 @@ describe("AuthService", () => {
       const { service, users } = buildService();
       users.findByUsername.mockResolvedValue(null);
 
-      await expect(service.login({ username: "nobody", password: "whatever" }, CALLER_IP)).rejects.toThrow(
+      await expect(service.login({ email: "nobody@example.com", password: "whatever" }, CALLER_IP)).rejects.toThrow(
         UnauthorizedException,
       );
     });
@@ -125,7 +155,7 @@ describe("AuthService", () => {
       users.findByUsername.mockResolvedValue(null);
       passwordHasher.verify.mockResolvedValue(false);
 
-      await expect(service.login({ username: "nobody", password: "whatever" }, CALLER_IP)).rejects.toThrow(
+      await expect(service.login({ email: "nobody@example.com", password: "whatever" }, CALLER_IP)).rejects.toThrow(
         UnauthorizedException,
       );
 
@@ -139,7 +169,7 @@ describe("AuthService", () => {
       users.findByUsername.mockResolvedValue(user);
       passwordHasher.verify.mockResolvedValue(false);
 
-      await expect(service.login({ username: user.username, password: "wrong" }, CALLER_IP)).rejects.toThrow(
+      await expect(service.login({ email: user.username, password: "wrong" }, CALLER_IP)).rejects.toThrow(
         UnauthorizedException,
       );
 
@@ -152,13 +182,13 @@ describe("AuthService", () => {
       passwordHasher.verify.mockResolvedValue(false);
 
       for (let i = 0; i < LoginThrottleService.MAX_ATTEMPTS; i++) {
-        await expect(service.login({ username: "nobody", password: "whatever" }, CALLER_IP)).rejects.toThrow(
+        await expect(service.login({ email: "nobody@example.com", password: "whatever" }, CALLER_IP)).rejects.toThrow(
           UnauthorizedException,
         );
       }
 
       users.findByUsername.mockClear();
-      await expect(service.login({ username: "nobody", password: "whatever" }, CALLER_IP)).rejects.toThrow(
+      await expect(service.login({ email: "nobody@example.com", password: "whatever" }, CALLER_IP)).rejects.toThrow(
         UnauthorizedException,
       );
       expect(users.findByUsername).not.toHaveBeenCalled();
@@ -185,7 +215,7 @@ describe("AuthService", () => {
 
       const result = await service.me({ sub: buildUser().id, accountId: 1, roles: ["CUSTOMER"] });
 
-      expect(result.username).toBe("priya.menon");
+      expect(result.username).toBe(EMAIL);
       expect(users.findById).toHaveBeenCalledWith(buildUser().id);
     });
   });

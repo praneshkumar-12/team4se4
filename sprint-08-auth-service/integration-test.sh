@@ -20,7 +20,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AUTH_BASE="${1:-http://localhost:3000}"
 TRADE_BASE="${2:-http://localhost:8085}"
 ACCOUNT_ID=1
-USERNAME="integration-test-$(date +%s)"
+# Seeded client (003-demo-seed.sql) whose account is ACCOUNT_ID - the email
+# a registration is now keyed off, not a caller-supplied accountId.
+EMAIL="arun.kumar@example.com"
 PASSWORD="Correct-Horse-Battery-9"
 
 fail() {
@@ -36,16 +38,23 @@ expect_status() {
   echo "OK: $description ($actual)"
 }
 
-echo "== Registering a user against account $ACCOUNT_ID on $AUTH_BASE =="
+echo "== Registering against the account linked to $EMAIL on $AUTH_BASE =="
+# account_id is now UNIQUE on users, so a second run against an
+# already-used database gets 409 (already registered) instead of 201 -
+# both are fine here, since PASSWORD is fixed and login (next) proves the
+# account is usable either way.
 register_status=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$AUTH_BASE/auth/register" \
   -H 'Content-Type: application/json' \
-  -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\",\"accountId\":$ACCOUNT_ID}")
-expect_status "register" 201 "$register_status"
+  -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}")
+if [[ "$register_status" != "201" && "$register_status" != "409" ]]; then
+  fail "register: expected HTTP 201 or 409, got $register_status"
+fi
+echo "OK: register ($register_status)"
 
 echo "== Logging in to get a real token pair =="
 login_response=$(curl -s -X POST "$AUTH_BASE/auth/login" \
   -H 'Content-Type: application/json' \
-  -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}")
+  -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}")
 access_token=$(node -e "console.log(JSON.parse(process.argv[1]).accessToken)" "$login_response")
 [[ -n "$access_token" && "$access_token" != "undefined" ]] || fail "no accessToken in login response: $login_response"
 

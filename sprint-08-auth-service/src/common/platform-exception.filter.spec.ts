@@ -1,4 +1,4 @@
-import { ArgumentsHost, ConflictException, UnauthorizedException, UnprocessableEntityException } from "@nestjs/common";
+import { ArgumentsHost, ConflictException, NotFoundException, UnauthorizedException, UnprocessableEntityException } from "@nestjs/common";
 import { PlatformExceptionFilter } from "./platform-exception.filter";
 
 function mockHost() {
@@ -17,6 +17,13 @@ describe("PlatformExceptionFilter", () => {
     filter.catch(new UnauthorizedException(), host);
     expect(status).toHaveBeenCalledWith(401);
     expect(json).toHaveBeenCalledWith({ errorCode: "AUTH-401", message: "Unauthorised" });
+  });
+
+  it("maps a 404 to the AUTH-404 envelope", () => {
+    const { host, status, json } = mockHost();
+    filter.catch(new NotFoundException(), host);
+    expect(status).toHaveBeenCalledWith(404);
+    expect(json).toHaveBeenCalledWith({ errorCode: "AUTH-404", message: "No client found for that email" });
   });
 
   it("maps a 409 to the AUTH-409 envelope", () => {

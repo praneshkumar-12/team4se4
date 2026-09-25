@@ -1,5 +1,6 @@
-import { ConflictException, Injectable, Logger, UnauthorizedException, UnprocessableEntityException } from "@nestjs/common";
+import { ConflictException, Injectable, Logger, NotFoundException, UnauthorizedException, UnprocessableEntityException } from "@nestjs/common";
 import { UsersRepository, UserRecord, FOREIGN_KEY_VIOLATION, UNIQUE_VIOLATION, pgErrorCode } from "../users/users.repository";
+import { AccountLookupRepository } from "../users/account-lookup.repository";
 import { PasswordHasher, getDummyPasswordHash } from "../users/password-hasher";
 import { TokenService } from "../tokens/token.service";
 import { RefreshTokenService } from "../tokens/refresh-token.service";
@@ -18,6 +19,7 @@ export class AuthService {
 
   constructor(
     private readonly users: UsersRepository,
+    private readonly accountLookup: AccountLookupRepository,
     private readonly passwordHasher: PasswordHasher,
     private readonly tokenService: TokenService,
     private readonly refreshTokens: RefreshTokenService,
@@ -25,32 +27,47 @@ export class AuthService {
   ) {}
 
   /**
-   * Registers a user against an existing trading account. No tokens are
-   * issued here; the client must log in separately. Accounts are owned by
-   * the database schema, so an unknown accountId is rejected (VAL-422).
+   * Registers a user against the trading account belonging to the client
+   * with this email (clients.email -> accounts.client_id, both UNIQUE, so
+   * never more than one match). No accountId is taken from the client, and
+   * no tokens are issued here - the client must log in separately.
+   *
+   * An email with no matching client is AUTH-404. An email/account that
+   * already has a user is AUTH-409 - uq_users_username and the new
+   * uq_users_account_id both land here, since either means "already
+   * registered" as far as a caller is concerned.
    */
   async register(dto: RegisterDto): Promise<UserResponseDto> {
+    const accountId = await this.accountLookup.findAccountIdByEmail(dto.email);
+    if (accountId === null) {
+      this.logger.warn({ event: "registration_unknown_email" });
+      throw new NotFoundException(); // AUTH-404: no client with that email
+    }
+
     const passwordHash = await this.passwordHasher.hash(dto.password);
 
     try {
       const user = await this.users.create({
-        username: dto.username,
+        username: dto.email,
         passwordHash,
-        accountId: dto.accountId,
+        accountId,
         // Roles are never taken from the client (see RegisterDto).
         roles: ["CUSTOMER"],
       });
-      this.logger.log({ event: "user_registered", username: user.username, accountId: user.accountId });
+      this.logger.log({ event: "user_registered", accountId: user.accountId });
       return toUserResponse(user);
     } catch (err) {
       const code = pgErrorCode(err);
       if (code === UNIQUE_VIOLATION) {
-        this.logger.warn({ event: "registration_conflict", username: dto.username });
-        throw new ConflictException(); // AUTH-409: username already taken
+        this.logger.warn({ event: "registration_conflict", accountId });
+        throw new ConflictException(); // AUTH-409: already registered
       }
       if (code === FOREIGN_KEY_VIOLATION) {
-        this.logger.warn({ event: "registration_unknown_account", accountId: dto.accountId });
-        throw new UnprocessableEntityException(); // VAL-422: unknown accountId
+        // The account existed at the lookup above but is gone by the time
+        // of the insert (deleted concurrently) - a narrow race, not the
+        // normal "unknown email" path, which is caught earlier as AUTH-404.
+        this.logger.warn({ event: "registration_unknown_account", accountId });
+        throw new UnprocessableEntityException(); // VAL-422: account no longer exists
       }
       throw err;
     }
@@ -68,14 +85,16 @@ export class AuthService {
       throw new UnauthorizedException();
     }
 
-    const user = await this.users.findByUsername(dto.username);
+    // users.username holds the registering email (see register() above) -
+    // findByUsername is still the right lookup, just keyed by that value.
+    const user = await this.users.findByUsername(dto.email);
     const hashToVerify = user ? user.passwordHash : await getDummyPasswordHash();
     const matches = await this.passwordHasher.verify(hashToVerify, dto.password);
 
     if (!user || !matches) {
       this.throttle.registerFailure(callerId);
       // Log does not distinguish unknown user from wrong password.
-      this.logger.warn({ event: "login_failed", username: dto.username, callerId });
+      this.logger.warn({ event: "login_failed", email: dto.email, callerId });
       throw new UnauthorizedException();
     }
 

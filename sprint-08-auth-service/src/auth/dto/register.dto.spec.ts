@@ -5,7 +5,7 @@ import { RegisterDto } from "./register.dto";
 import { toValidationMessages } from "../../common/validation-errors";
 
 async function passwordErrors(password: string): Promise<string[]> {
-  const dto = plainToInstance(RegisterDto, { username: "priya.menon", password, accountId: 1 });
+  const dto = plainToInstance(RegisterDto, { email: "arun.kumar@example.com", password });
   return toValidationMessages(await validate(dto));
 }
 
@@ -52,13 +52,12 @@ describe("RegisterDto password rules", () => {
   });
 
   it("reports failures from several fields together", async () => {
-    const dto = plainToInstance(RegisterDto, { username: "a", password: "short", accountId: 0 });
+    const dto = plainToInstance(RegisterDto, { email: "not-an-email", password: "short" });
     const messages = toValidationMessages(await validate(dto));
     expect(messages).toEqual(
       expect.arrayContaining([
-        expect.stringContaining("username"),
+        expect.stringContaining("email"),
         expect.stringContaining("password"),
-        expect.stringContaining("accountId"),
       ]),
     );
   });

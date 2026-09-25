@@ -2,7 +2,7 @@ import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logge
 import type { Response } from "express";
 
 interface ErrorEnvelope {
-  errorCode: "AUTH-401" | "AUTH-409" | "VAL-422";
+  errorCode: "AUTH-401" | "AUTH-404" | "AUTH-409" | "VAL-422";
   message: string;
   /** Present on VAL-422 only: every validation failure, reported together. */
   errors?: string[];
@@ -51,6 +51,8 @@ function toEnvelope(status: number): ErrorEnvelope | null {
   switch (status) {
     case HttpStatus.UNAUTHORIZED:
       return { errorCode: "AUTH-401", message: "Unauthorised" };
+    case HttpStatus.NOT_FOUND:
+      return { errorCode: "AUTH-404", message: "No client found for that email" };
     case HttpStatus.CONFLICT:
       return { errorCode: "AUTH-409", message: "Registration failed" };
     case HttpStatus.UNPROCESSABLE_ENTITY:
