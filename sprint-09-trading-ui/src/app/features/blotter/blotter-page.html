@@ -1,0 +1,61 @@
+<z-card class="m-6">
+  <z-card-header class="flex flex-row items-center justify-between">
+    <div>
+      <h2 z-card-title zTitle="Blotter"></h2>
+      <p z-card-description zDescription="Every order for your account, newest first."></p>
+    </div>
+    <button z-button zType="outline" zSize="sm" data-testid="blotter-refresh" (click)="refresh()">Refresh</button>
+  </z-card-header>
+
+  <z-card-content>
+    @if (isInitialLoad()) {
+      <div class="flex flex-col gap-2" data-testid="blotter-loading">
+        <z-skeleton class="h-10 w-full" />
+        <z-skeleton class="h-10 w-full" />
+        <z-skeleton class="h-10 w-full" />
+      </div>
+    } @else if (loadError(); as message) {
+      <p class="text-destructive text-sm" data-testid="blotter-error">{{ message }}</p>
+    } @else if (orders().length === 0) {
+      <p class="text-muted-foreground text-sm" data-testid="blotter-empty">No orders yet.</p>
+    } @else {
+      <table z-table data-testid="blotter-table">
+        <thead z-table-header>
+          <tr z-table-row>
+            <th z-table-head>Date</th>
+            <th z-table-head>Symbol</th>
+            <th z-table-head>Side</th>
+            <th z-table-head class="text-right">Quantity</th>
+            <th z-table-head class="text-right">Price</th>
+            <th z-table-head class="text-right">Executed price</th>
+            <th z-table-head>Status</th>
+          </tr>
+        </thead>
+        <tbody z-table-body>
+          @for (order of orders(); track order.orderId) {
+            <tr z-table-row data-testid="blotter-row" [attr.data-order-id]="order.orderId">
+              <td z-table-cell>{{ order.createdOn | date: 'medium' }}</td>
+              <td z-table-cell>{{ order.symbol }}</td>
+              <td z-table-cell>{{ order.side }}</td>
+              <td z-table-cell class="tabular-figures text-right">{{ order.quantity }}</td>
+              <td z-table-cell class="tabular-figures text-right">{{ order.price.toFixed(2) }}</td>
+              <td z-table-cell class="tabular-figures text-right">
+                {{ order.executedPrice !== null && order.executedPrice !== undefined ? order.executedPrice.toFixed(2) : 'N/A' }}
+              </td>
+              <td z-table-cell>
+                <div class="flex flex-col gap-0.5">
+                  <z-badge [zType]="statusBadge[order.status].variant" [attr.data-testid]="'order-status-' + order.orderId">
+                    {{ statusBadge[order.status].label }}
+                  </z-badge>
+                  @if (order.status === 'NEW') {
+                    <span class="text-muted-foreground text-xs" data-testid="order-working">Still working</span>
+                  }
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  </z-card-content>
+</z-card>

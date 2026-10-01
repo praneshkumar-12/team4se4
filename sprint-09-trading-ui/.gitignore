@@ -39,6 +39,12 @@ testem.log
 /typings
 __screenshots__/
 
+# Playwright (SEC4-641) — real addresses/credentials, never committed
+.env
+/playwright-report
+/test-results
+/playwright/.cache
+
 # System files
 .DS_Store
 Thumbs.db
