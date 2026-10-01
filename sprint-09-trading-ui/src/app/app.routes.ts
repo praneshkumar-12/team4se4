@@ -1,11 +1,7 @@
 import { Routes } from '@angular/router';
+import { authGuard } from './core/auth/auth.guard';
 import { ROUTE_PATHS } from './core/config/routes.const';
 
-/**
- * Guard placeholders: Person 2 (SEC4-637) adds `canActivate: [authGuard]`
- * to every route below except `signIn` — keep that diff to just adding the
- * guard, this file's shape otherwise stays as Person 1 left it.
- */
 export const routes: Routes = [
   {
     path: '',
@@ -18,11 +14,13 @@ export const routes: Routes = [
   },
   {
     path: ROUTE_PATHS.orderTicket.slice(1),
+    canActivate: [authGuard],
     loadComponent: () =>
       import('./features/order-ticket/order-ticket-page').then((m) => m.OrderTicketPage),
   },
   {
     path: ROUTE_PATHS.blotter.slice(1),
+    canActivate: [authGuard],
     loadComponent: () => import('./features/blotter/blotter-page').then((m) => m.BlotterPage),
   },
 ];
