@@ -57,11 +57,33 @@ inside its seeded cash balance.
 
 ## Status as of this commit
 
-Configured and written against the real test identifiers (`sign-in`'s
-README, `order-ticket-page.html`), and `npx playwright test --list` loads
-both files cleanly (7 tests, no syntax/config errors). They have **not**
-been executed against a live stack in this environment — no `run-local.env`
-was available and bringing up Docker Desktop's full stack (image builds
-included) was out of scope for this pass. Run them for real per the steps
-above before treating SEC4-641 as fully done; this is flagged rather than
-silently claimed.
+Executed against a real local stack (auth-service, trade-api, and `ng
+serve`, all actually up) — all 7 tests pass. Doing this surfaced three real
+bugs, now fixed:
+
+- `proxy.conf.json`'s `/auth-api/*` and `/trade-api/*` patterns only match
+  one path segment after the prefix, so multi-segment real endpoints
+  (`/auth-api/auth/login`, `/trade-api/api/v1/accounts/{id}/orders`, …)
+  silently 404'd under the dev server's actual (Vite/picomatch) glob
+  matching. Fixed to `/**`.
+- `ZardInputComponent.writeValue()` (`shared/components/input`) coerced a
+  `null` initial value to `''`, which permanently broke the numeric
+  round-trip for any `type="number"` control that starts out empty
+  (`quantity`, `price`) - every keystroke came back as a string, so the
+  business-rule validators (which require a real `number`) could never
+  pass and no order could ever be submitted. Fixed to preserve `null`.
+- `place-order.spec.ts`'s `beforeEach` called `signIn()` then
+  `page.goto('/orders/new')` - a hard navigation, which drops the
+  deliberately in-memory-only bearer token (`TokenStore`) before the route
+  guard runs. Replaced with `signInAndGoTo()`, which reaches the page
+  through the app's own guard-redirect instead.
+
+One caveat specific to *this* environment, not the code: with no network
+route to the Kafka VM (`run-local.sh`'s SSH check times out here) and no
+Docker available, `trade-api`'s order-placement call blocks for Kafka's
+default `max.block.ms` (60s) before falling through to its documented
+at-least-`NEW` behavior - confirmed directly with `curl` (60.4s, then a
+normal `200`/`NEW` response) and by raising the third test's assertion
+timeout for one run (passed in ~1 minute). With a reachable Kafka broker
+this is instant, as the other two sprints' authors intended; no code
+change was made to work around it.

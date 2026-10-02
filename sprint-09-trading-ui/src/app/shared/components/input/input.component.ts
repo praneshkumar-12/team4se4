@@ -95,8 +95,13 @@ export class ZardInputComponent implements ControlValueAccessor {
     this.elementRef.nativeElement.disabled = isDisabled;
   }
 
-  writeValue(value?: string): void {
-    this.value.set(value ?? '');
+  writeValue(value?: ZardInputValue): void {
+    // `null`/`undefined` must stay as-is, not coerce to '' - `readNativeValue`
+    // only returns a parsed number for a numeric input when the model's
+    // current value is already `number | null`; coercing to '' here broke
+    // that gate permanently for every control that starts out null (e.g. an
+    // empty quantity/price), turning every later keystroke into a string.
+    this.value.set(value ?? null);
   }
 
   private isNumericInput(element: ZardInputElement): element is HTMLInputElement {

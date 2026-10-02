@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { signIn } from './helpers';
+import { signInAndGoTo } from './helpers';
 
 /**
  * SEC4-641 — place-order journey. `TCS` is one of `sprint-06-trade-api`'s
@@ -17,8 +17,7 @@ const PRICE = '10.00';
 
 test.describe('place order', () => {
   test.beforeEach(async ({ page }) => {
-    await signIn(page);
-    await page.goto('/orders/new');
+    await signInAndGoTo(page, '/orders/new');
   });
 
   test('the account field is read-only', async ({ page }) => {

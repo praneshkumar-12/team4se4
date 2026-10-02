@@ -1,11 +1,11 @@
 {
-  "/auth-api/*": {
+  "/auth-api/**": {
     "target": "http://localhost:3000",
     "pathRewrite": { "^/auth-api": "" },
     "secure": false,
     "changeOrigin": true
   },
-  "/trade-api/*": {
+  "/trade-api/**": {
     "target": "http://localhost:8085",
     "pathRewrite": { "^/trade-api": "" },
     "secure": false,

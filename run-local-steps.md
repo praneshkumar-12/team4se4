@@ -1,17 +1,18 @@
 # What `run-local.sh` actually does
 
 `run-local.sh` brings up the whole trading platform with Kafka running on a
-remote VM and everything else (Postgres, trade-api, auth-service, executor)
-running locally. This document walks through exactly what each command does,
-in the order it does it. See `runbook.md` for the older, fully-manual
-docker-compose walkthrough this script now replaces for day-to-day local dev.
+remote VM and everything else (Postgres, trade-api, auth-service, executor,
+frontend) running locally. This document walks through exactly what each
+command does, in the order it does it. See `runbook.md` for the older,
+fully-manual docker-compose walkthrough this script now replaces for
+day-to-day local dev.
 
 ## Commands
 
 ```bash
 ./run-local.sh              # same as `start`
 ./run-local.sh start        # bring up everything (idempotent, safe to re-run)
-./run-local.sh stop         # stop the local processes (trade-api, auth-service, executor)
+./run-local.sh stop         # stop the local processes (trade-api, auth-service, executor, frontend)
 ./run-local.sh kafka-stop   # stop the Kafka container on the remote VM
 ./run-local.sh status       # print current status of every component
 ./run-local.sh restart      # stop local services, then run `start` again
@@ -30,9 +31,10 @@ cp run-local.env.example run-local.env
 Required: `VM_HOST`, `VM_USER`, `VM_PASSWORD`, `DB_PASSWORD` (your local
 Postgres password), `JWT_SECRET` (32+ chars, e.g. `openssl rand -hex 32`),
 `FAUXNANCE_API_KEY`. Optional overrides (`JAVA_HOME`, `DB_USER`, `DB_PORT`,
-`KAFKA_VM_PORT`, `RUN_AUTH_SERVICE`, …) are listed at the bottom of the
-template. Format is plain `KEY=VALUE`; values are read literally, so `!`, `$`
-and spaces in a password are fine (no shell quoting needed).
+`KAFKA_VM_PORT`, `RUN_AUTH_SERVICE`, `RUN_FRONTEND`, …) are listed at the
+bottom of the template. Format is plain `KEY=VALUE`; values are read
+literally, so `!`, `$` and spaces in a password are fine (no shell quoting
+needed).
 
 ### 1. Validate configuration
 Loads `run-local.env`, then checks that every required value is set and not
@@ -53,7 +55,8 @@ left as a `CHANGE_ME…` placeholder, and that `KAFKA_VM_PORT` is a number in
 
 ### 3. Check local dependencies
 Confirms these are on `PATH`: `git`, `mvn`, `ssh`, `scp`, `curl`, `psql`,
-and — since `RUN_AUTH_SERVICE=true` — `node`, `npm`, `liquibase`. Also
+and — since `RUN_AUTH_SERVICE=true` and/or `RUN_FRONTEND=true` — `node`,
+`npm`; `liquibase` is required only for `RUN_AUTH_SERVICE=true`. Also
 requires `sshpass` when `VM_PASSWORD` is set (password-based SSH).
 
 If `sshpass` or `liquibase` are missing on Windows, the script attempts to
@@ -115,12 +118,14 @@ In order:
 3. `executor` → `mvn clean package`
 4. `sprint-08-auth-service` → `npm ci` then `npm run build` (TypeScript
    compile)
+5. `sprint-09-trading-ui` → `npm ci` (no build step - `ng serve` runs
+   straight from source)
 
 Tests are skipped in all Maven builds (`-DskipTests`).
 
 ### 10. Stop any previously-running local services
 Reads `.run-local/pids.env` and kills any trade-api / auth-service /
-executor process left running from a previous `start`.
+executor / frontend process left running from a previous `start`.
 
 ### 11. Start trade-api
 Launches `mvn spring-boot:run` in the background (`nohup`, logs to
@@ -153,14 +158,27 @@ Launches `mvn exec:java` running `org.leap.executor.Main` in the background
 Fauxnance market-data API. Since it has no HTTP health endpoint, the script
 just waits 8s and checks the process is still alive.
 
-### 15. Print the summary
+### 15. Start the frontend
+Launches `npm run start -- --port FRONTEND_PORT` (i.e. `ng serve`) in
+`sprint-09-trading-ui` in the background (logs to `logs/frontend.log`).
+`ng serve` reads that project's `proxy.conf.json`, which forwards
+`/auth-api` → `localhost:AUTH_SERVICE_PORT` and `/trade-api` →
+`localhost:TRADE_API_PORT` — both hardcoded there, so this only lines up
+with the backends this script just started when their ports are left at
+the defaults. Since there's no fixed health-check fragment to look for
+(it's an HTML page, not a JSON API), the script just polls the root URL
+(up to 60 × 3s) for any successful HTTP response.
+
+### 16. Print the summary
 Queries and prints the live status of every component (Kafka on the VM,
-local DB, trade-api, auth-service, executor) plus the follow-up commands.
+local DB, trade-api, auth-service, executor, frontend) plus the follow-up
+commands.
 
 ## `stop`
-Kills any locally-running trade-api / auth-service / executor process
-(tracked via `.run-local/pids.env`), gracefully (`SIGTERM`, then `SIGKILL`
-after a 2s grace period if still alive). Does **not** touch remote Kafka.
+Kills any locally-running trade-api / auth-service / executor / frontend
+process (tracked via `.run-local/pids.env`), gracefully (`SIGTERM`, then
+`SIGKILL` after a 2s grace period if still alive). Does **not** touch
+remote Kafka.
 
 ## `kafka-stop`
 Validates config, resolves Java, checks dependencies, re-establishes the
@@ -168,7 +186,7 @@ SSH connection, and runs `docker compose stop kafka` on the VM.
 
 ## `status`
 Validates config and resolves Java, then prints the same summary as the
-end of `start` (steps 15) without doing any building or starting.
+end of `start` (step 16) without doing any building or starting.
 
 ## `restart`
 Runs `stop` followed by `start`.
@@ -182,6 +200,7 @@ Runs `stop` followed by `start`.
 | trade-api  | local machine (Maven/Spring Boot process) |
 | auth-service | local machine (Node process) |
 | executor   | local machine (Maven/Java process) |
+| frontend   | local machine (Node process, `ng serve`) |
 
 ## State files
 
@@ -190,4 +209,5 @@ All under `.run-local/` (git-ignored, created on demand):
 - `docker-compose.kafka-remote.override.yml` — Kafka listener/port override, copied to the VM
 - `docker-compose.kafka-remote.env` — `.env` copied to the VM alongside `docker-compose.yml`
 
-Logs go to `logs/trade-api.log`, `logs/auth-service.log`, `logs/executor.log`.
+Logs go to `logs/trade-api.log`, `logs/auth-service.log`,
+`logs/executor.log`, `logs/frontend.log`.

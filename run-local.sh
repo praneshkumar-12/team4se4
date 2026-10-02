@@ -43,6 +43,9 @@ TRADE_API_PORT="8085"
 AUTH_SERVICE_PORT="3000"
 RUN_AUTH_SERVICE="true"
 
+FRONTEND_PORT="4200"
+RUN_FRONTEND="true"
+
 LOG_DIR="logs"
 STATE_DIR=".run-local"
 PID_FILE="${STATE_DIR}/pids.env"
@@ -72,7 +75,7 @@ LOCAL_ENV_KEYS=(
   DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD
   JWT_SECRET JWT_ISSUER
   FAUXNANCE_BASE_URL FAUXNANCE_API_KEY POLL_INTERVAL_SECONDS
-  JAVA_HOME RUN_AUTH_SERVICE
+  JAVA_HOME RUN_AUTH_SERVICE RUN_FRONTEND
 )
 
 # Reads KEY=VALUE lines from run-local.env. Parsed, not `source`d: passwords
@@ -302,14 +305,14 @@ check_maven_version() {
 }
 
 check_node_version_if_needed() {
-  if [[ "${RUN_AUTH_SERVICE}" != "true" ]]; then
+  if [[ "${RUN_AUTH_SERVICE}" != "true" && "${RUN_FRONTEND}" != "true" ]]; then
     return
   fi
 
   local node_major
   node_major="$(node -p "process.versions.node.split('.')[0]")"
   if (( node_major < 20 )); then
-    fail "Node.js 20+ is required for sprint-08-auth-service. Found Node ${node_major}."
+    fail "Node.js 20+ is required for sprint-08-auth-service/sprint-09-trading-ui. Found Node ${node_major}."
   fi
 }
 
@@ -325,9 +328,12 @@ check_local_dependencies() {
     require_cmd sshpass
   fi
 
-  if [[ "${RUN_AUTH_SERVICE}" == "true" ]]; then
+  if [[ "${RUN_AUTH_SERVICE}" == "true" || "${RUN_FRONTEND}" == "true" ]]; then
     require_cmd node
     require_cmd npm
+  fi
+
+  if [[ "${RUN_AUTH_SERVICE}" == "true" ]]; then
     require_cmd liquibase
   fi
 
@@ -632,6 +638,26 @@ build_projects() {
 
     npm --prefix sprint-08-auth-service run build
   fi
+
+  if [[ "${RUN_FRONTEND}" == "true" ]]; then
+    info "Installing sprint-09-trading-ui"
+
+    local npm_attempts=3
+    local npm_attempt
+    for ((npm_attempt=1; npm_attempt<=npm_attempts; npm_attempt++)); do
+      if npm --prefix sprint-09-trading-ui ci; then
+        break
+      fi
+
+      if (( npm_attempt < npm_attempts )); then
+        info "trading-ui npm ci failed (attempt ${npm_attempt}/${npm_attempts}); retrying after cleanup"
+        rm -rf sprint-09-trading-ui/node_modules/.package-lock 2>/dev/null || true
+        sleep 2
+      else
+        fail "trading-ui dependency install failed (npm ci). Ensure no process is locking sprint-09-trading-ui/node_modules and retry."
+      fi
+    done
+  fi
 }
 
 wait_for_http_contains() {
@@ -646,6 +672,20 @@ wait_for_http_contains() {
       return 0
     fi
     sleep 2
+  done
+
+  return 1
+}
+
+wait_for_http_ok() {
+  local url="$1"
+  local attempts="$2"
+
+  for ((i=1; i<=attempts; i++)); do
+    if curl -fsS -o /dev/null "${url}" 2>/dev/null; then
+      return 0
+    fi
+    sleep 3
   done
 
   return 1
@@ -679,25 +719,53 @@ stop_pid_cross_platform() {
   fi
 }
 
-ensure_port_free() {
-  local service_name="$1"
-  local port="$2"
+kill_port_listeners() {
+  local port="$1"
   local pids pid
 
   pids="$(find_listening_pids "${port}" || true)"
   [[ -n "${pids}" ]] || return 0
 
-  info "Port ${port} is already in use; stopping existing listener(s) before starting ${service_name}"
   while IFS= read -r pid; do
     [[ -n "${pid}" ]] || continue
     stop_pid_cross_platform "${pid}"
   done <<< "${pids}"
 }
 
+ensure_port_free() {
+  local service_name="$1"
+  local port="$2"
+
+  find_listening_pids "${port}" | grep -q . || return 0
+
+  info "Port ${port} is already in use; stopping existing listener(s) before starting ${service_name}"
+  kill_port_listeners "${port}"
+}
+
+# `$!` after a backgrounded command (what FRONTEND_PID etc. are) is a Git
+# Bash/MSYS-level PID. MSYS's own `kill` understands it, but the real
+# process actually holding the port - the far end of a nohup/npm/mvn
+# wrapper chain - has a separate native Windows PID that only `taskkill`
+# can see, and `taskkill //PID` on the MSYS PID targets nothing (or, by
+# sheer coincidence, some unrelated real process with that same number).
+# Finding the port's real listener via `netstat` (`find_listening_pids`,
+# already proven out by `ensure_port_free` above) and killing *that* is
+# the one approach confirmed to actually free the port.
+stop_port_listeners() {
+  local service_name="$1"
+  local port="$2"
+
+  find_listening_pids "${port}" | grep -q . || return 0
+
+  info "Stopping ${service_name} (port ${port})"
+  kill_port_listeners "${port}"
+}
+
 load_pids() {
   TRADE_API_PID=""
   AUTH_SERVICE_PID=""
   EXECUTOR_PID=""
+  FRONTEND_PID=""
 
   if [[ -f "${PID_FILE}" ]]; then
     # shellcheck disable=SC1090
@@ -711,6 +779,7 @@ save_pids() {
 TRADE_API_PID=${TRADE_API_PID:-}
 AUTH_SERVICE_PID=${AUTH_SERVICE_PID:-}
 EXECUTOR_PID=${EXECUTOR_PID:-}
+FRONTEND_PID=${FRONTEND_PID:-}
 EOF
 }
 
@@ -836,6 +905,40 @@ start_executor() {
   info "PID: ${EXECUTOR_PID}"
 }
 
+start_frontend() {
+  if [[ "${RUN_FRONTEND}" != "true" ]]; then
+    return
+  fi
+
+  info "Starting frontend (ng serve) on localhost:${FRONTEND_PORT}"
+  mkdir -p "${LOG_DIR}"
+  ensure_port_free "frontend" "${FRONTEND_PORT}"
+
+  # `proxy.conf.json` (sprint-09-trading-ui/proxy.conf.json) forwards
+  # /auth-api -> localhost:${AUTH_SERVICE_PORT} and /trade-api ->
+  # localhost:${TRADE_API_PORT}; it hardcodes those hosts, so this only
+  # lines up with the backends this script just started when their ports
+  # are left at the defaults.
+  nohup npm --prefix sprint-09-trading-ui run start -- --port "${FRONTEND_PORT}" \
+    > "${LOG_DIR}/frontend.log" 2>&1 &
+
+  FRONTEND_PID=$!
+  save_pids
+
+  if ! wait_for_http_ok "http://localhost:${FRONTEND_PORT}/" 60; then
+    tail -n 120 "${LOG_DIR}/frontend.log" || true
+    fail "Service failed to start: frontend"
+  fi
+
+  if ! kill -0 "${FRONTEND_PID}" >/dev/null 2>&1; then
+    tail -n 120 "${LOG_DIR}/frontend.log" || true
+    fail "Service failed to start: frontend"
+  fi
+
+  info "Started frontend on port ${FRONTEND_PORT}"
+  info "PID: ${FRONTEND_PID}"
+}
+
 is_pid_running() {
   local pid="$1"
   [[ -n "${pid}" ]] && kill -0 "${pid}" >/dev/null 2>&1
@@ -852,12 +955,21 @@ stop_pid_if_running() {
     if kill -0 "${pid}" >/dev/null 2>&1; then
       kill -9 "${pid}" >/dev/null 2>&1 || true
     fi
+    # `kill` only signals the tracked PID itself (the shell/npm wrapper
+    # nohup handed back) - on Windows that wrapper's actual child process
+    # (the JVM, or here node/ng serve) survives it and keeps the port
+    # bound. taskkill //T kills the whole process tree.
+    if command -v taskkill >/dev/null 2>&1; then
+      taskkill //PID "${pid}" //T //F >/dev/null 2>&1 || true
+    fi
   fi
 }
 
 stop_local_services() {
   load_pids
 
+  stop_pid_if_running "frontend" "${FRONTEND_PID}"
+  stop_port_listeners "frontend" "${FRONTEND_PORT}"
   stop_pid_if_running "executor" "${EXECUTOR_PID}"
   stop_pid_if_running "auth-service" "${AUTH_SERVICE_PID}"
   stop_pid_if_running "trade-api" "${TRADE_API_PID}"
@@ -865,6 +977,7 @@ stop_local_services() {
   TRADE_API_PID=""
   AUTH_SERVICE_PID=""
   EXECUTOR_PID=""
+  FRONTEND_PID=""
   save_pids
 
   info "Local services stopped"
@@ -926,12 +1039,14 @@ print_summary() {
   local trade_state
   local auth_state
   local executor_state
+  local frontend_state
 
   kafka_state="$(kafka_status)"
   db_state="$(db_status)"
   trade_state="$(service_status "${TRADE_API_PID}")"
   auth_state="$(service_status "${AUTH_SERVICE_PID}")"
   executor_state="$(service_status "${EXECUTOR_PID}")"
+  frontend_state="$(service_status "${FRONTEND_PID}")"
 
   echo "========================================"
   echo " LOCAL TRADE PLATFORM"
@@ -960,10 +1075,19 @@ print_summary() {
   echo "Executor:"
   status_line "  Status" "${executor_state}"
   echo
+  if [[ "${RUN_FRONTEND}" == "true" ]]; then
+    echo "Frontend:"
+    status_line "  Port" "${FRONTEND_PORT}"
+    status_line "  Status" "${frontend_state}"
+    echo
+  fi
   echo "========================================"
   echo "Everything is ready."
   echo "========================================"
   echo
+  if [[ "${RUN_FRONTEND}" == "true" ]]; then
+    echo "Open the app:        http://localhost:${FRONTEND_PORT}"
+  fi
   echo "Stop local services: ./run-local.sh stop"
   echo "Stop remote Kafka:   ./run-local.sh kafka-stop"
   echo "Show status:         ./run-local.sh status"
@@ -988,6 +1112,7 @@ start_all() {
   run_auth_liquibase
   start_auth_service
   start_executor
+  start_frontend
 
   print_summary
 }
@@ -1007,7 +1132,7 @@ restart_all() {
 usage() {
   cat <<EOF
 Usage:
-  ./run-local.sh              Start full local stack with remote Kafka
+  ./run-local.sh              Start full local stack (incl. frontend) with remote Kafka
   ./run-local.sh start        Same as default
   ./run-local.sh stop         Stop local services started by this script
   ./run-local.sh kafka-stop   Stop Kafka on the remote VM
