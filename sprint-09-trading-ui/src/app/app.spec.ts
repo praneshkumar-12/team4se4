@@ -28,6 +28,27 @@ describe('App', () => {
     expect(signOutButton).toBeNull();
   });
 
+  it('does not show the nav links while signed out', () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="nav-blotter"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="nav-order-ticket"]')).toBeNull();
+  });
+
+  it('shows nav links to the blotter and the order ticket once signed in', () => {
+    const fixture = TestBed.createComponent(App);
+    const tokenStore = TestBed.inject(TokenStore);
+    tokenStore.setToken('a.b.c');
+    fixture.detectChanges();
+
+    const blotterLink = fixture.nativeElement.querySelector('[data-testid="nav-blotter"]');
+    const orderTicketLink = fixture.nativeElement.querySelector('[data-testid="nav-order-ticket"]');
+
+    expect(blotterLink.getAttribute('href')).toBe(ROUTE_PATHS.blotter);
+    expect(orderTicketLink.getAttribute('href')).toBe(ROUTE_PATHS.orderTicket);
+  });
+
   it('signing out clears the session', () => {
     const fixture = TestBed.createComponent(App);
     const tokenStore = TestBed.inject(TokenStore);
